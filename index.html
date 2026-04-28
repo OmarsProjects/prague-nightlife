@@ -1,0 +1,2568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a1f">
+<title>Prague Tonight — Live Scout</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.122/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, system-ui, sans-serif; background: #1a1a1f; color: #f5f5f7; }
+
+  #map { position: absolute; inset: 0; }
+
+  /* Header */
+  #header {
+    position: absolute; top: env(safe-area-inset-top); left: 0; right: 0;
+    padding: 12px 14px;
+    background: linear-gradient(180deg, rgba(20,20,28,0.92), rgba(20,20,28,0.55) 70%, transparent);
+    z-index: 10;
+    pointer-events: none;
+  }
+  #header .row { display: flex; align-items: center; justify-content: space-between; pointer-events: auto; }
+  #header h1 {
+    font-size: 18px;
+    color: #ffffff;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  #header h1 .accent { color: #FFD54F; }
+  #header .clock {
+    font-size: 13px;
+    color: #fff;
+    background: rgba(0,0,0,0.55);
+    padding: 5px 11px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.18);
+    font-weight: 600;
+    backdrop-filter: blur(8px);
+  }
+  .live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #FF3D00; box-shadow: 0 0 8px #FF3D00;
+    animation: blink 1.5s infinite;
+    margin-right: 5px; vertical-align: middle;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* Filter chips */
+  #filters {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 50px);
+    left: 0; right: 0;
+    display: flex;
+    gap: 6px;
+    padding: 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    z-index: 9;
+    pointer-events: auto;
+    scrollbar-width: none;
+  }
+  #filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0;
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a1a;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .chip.active { background: #1976D2; border-color: #1976D2; color: white; box-shadow: 0 2px 10px rgba(25,118,210,0.5); }
+
+  /* Legend */
+  #legend {
+    position: absolute;
+    bottom: calc(env(safe-area-inset-bottom) + 200px);
+    left: 12px;
+    background: rgba(255,255,255,0.95);
+    color: #1a1a1a;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 11px;
+    z-index: 9;
+    pointer-events: none;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  #legend .lbl { font-weight: bold; margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  #legend .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+
+  /* Bottom panel - venue list */
+  #bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: linear-gradient(180deg, rgba(20,20,28,0.93), rgba(20,20,28,0.99));
+    backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-radius: 18px 18px 0 0;
+    padding: 10px 0 calc(env(safe-area-inset-bottom) + 8px) 0;
+    z-index: 8;
+    overflow: hidden;
+    transition: transform 0.25s ease;
+  }
+  #bottom .grip {
+    width: 40px; height: 4px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    margin: 0 auto 10px;
+  }
+  #venueList {
+    display: flex;
+    gap: 10px;
+    padding: 4px 12px 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #venueList::-webkit-scrollbar { display: none; }
+  .vcard {
+    flex-shrink: 0;
+    width: 220px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    gap: 10px;
+  }
+  .vcard:active { transform: scale(0.97); background: rgba(255,255,255,0.1); }
+  .vcard.hot { border-color: #FF3D00; }
+  .vcard.warm { border-color: #FFA726; }
+  .vcard .vthumb {
+    width: 56px; height: 56px;
+    border-radius: 8px;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .vcard .vbody { flex: 1; min-width: 0; }
+  .vcard .vname { font-size: 13px; font-weight: bold; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vcard .varea { font-size: 10px; color: #FFD54F; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vcard .vstats { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .vcard .score {
+    font-family: -apple-system, system-ui, monospace;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+  }
+  .vcard .scorelabel { font-size: 9px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+
+  /* Detail sheet */
+  #detail {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 0; /* hidden by default */
+    background: linear-gradient(180deg, rgba(28,28,34,0.97), rgba(15,15,20,0.99));
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid rgba(255,213,79,0.32);
+    border-radius: 24px 24px 0 0;
+    z-index: 20;
+    transition: height 0.32s cubic-bezier(.16,.84,.32,1);
+    box-shadow: 0 -20px 60px rgba(0,0,0,0.75);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #detail.show { height: 56vh; }
+  /* Peek = thin strip at the bottom, only the header is visible */
+  #detail.peek { height: 110px; }
+  #detail.peek .scrollbody { display: none; }
+  #detail .grabber {
+    cursor: pointer;
+    width: 60px; height: 5px;
+    margin: 9px auto 4px;
+    transition: background 0.15s, width 0.15s;
+  }
+  #detail .grabber:hover { background: rgba(255,213,79,0.6); }
+  #detail.peek .grabber { background: rgba(255,213,79,0.7); width: 90px; }
+  #detail .header { cursor: pointer; }
+  /* Persistent "TAP TO EXPAND" bar at the top of the panel in peek mode */
+  #detail .expand-bar {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 5px 10px;
+    background: linear-gradient(180deg, rgba(255,213,79,0.18), transparent);
+    color: #FFD54F;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    text-align: center;
+    cursor: pointer;
+    z-index: 4;
+    pointer-events: auto;
+  }
+  #detail.peek .expand-bar { display: block; }
+  #detail .closebtn {
+    position: absolute; top: 12px; right: 12px;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: white;
+    cursor: pointer;
+    z-index: 5;
+  }
+  #detail .grabber {
+    width: 40px; height: 4px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 2px;
+    margin: 8px auto 4px;
+    flex-shrink: 0;
+  }
+  #detail .header {
+    padding: 6px 18px 10px;
+    display: flex; align-items: center; gap: 14px;
+    flex-shrink: 0;
+  }
+  #detail .header .score-pill {
+    font-family: ui-monospace, monospace;
+    font-size: 28px; font-weight: 800;
+    width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid currentColor;
+    flex-shrink: 0;
+  }
+  #detail .header .titles { flex: 1; min-width: 0; padding-right: 36px; }
+  #detail .header h2 { font-size: 20px; color: #fff; line-height: 1.15; margin-bottom: 4px; }
+  #detail .header .darea { font-size: 10px; color: #FFD54F; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+  #detail .header .vibe-text { font-size: 12px; opacity: 0.9; line-height: 1.4; }
+  #detail .header .vibe-text b { color: currentColor; }
+
+  #detail .scrollbody {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 18px calc(env(safe-area-inset-bottom) + 14px) 18px;
+  }
+
+  #detail .ddesc { font-size: 13px; opacity: 0.82; margin: 0 0 12px; line-height: 1.5; }
+
+  /* Interactive Street View embed — drag to look around, like Google Maps */
+  #detail .streetview {
+    width: 100%;
+    height: 240px;
+    margin: 0 0 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    position: relative;
+    overflow: hidden;
+    background: #1a1a22;
+  }
+  #detail .streetview iframe {
+    width: 100%; height: 100%;
+    border: 0;
+    display: block;
+  }
+  #detail .streetview .sv-label {
+    position: absolute; top: 10px; left: 12px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: #fff; padding: 5px 10px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 6px;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    z-index: 2;
+  }
+  /* Marker label that travels with the bar's real-world location */
+  .sv-anchor-label {
+    background: linear-gradient(135deg, #1E88E5 0%, #1565C0 100%);
+    color: #fff;
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 2px rgba(255,255,255,0.45);
+    white-space: nowrap;
+    transform: translate(-50%, calc(-100% - 6px));
+    position: relative;
+  }
+  .sv-anchor-label::after {
+    content: '';
+    position: absolute;
+    bottom: -6px; left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px; height: 10px;
+    background: #1565C0;
+  }
+
+  /* Section labels for photo groups */
+  #detail .feed-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: #FFD54F;
+  }
+  #detail .feed-label .freshness {
+    font-size: 9px;
+    background: rgba(255,107,0,0.18);
+    border: 1px solid rgba(255,107,0,0.4);
+    color: #FF6B00;
+    padding: 2px 7px;
+    border-radius: 999px;
+    letter-spacing: 1px;
+  }
+  #detail .feed-source {
+    position: absolute;
+    bottom: 4px; left: 4px; right: 4px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 8.5px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 4px;
+    text-transform: lowercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.4px;
+    pointer-events: none;
+  }
+  #detail .feed-tile { position: relative; }
+
+  /* Instagram-grid photo feed (5 across, square tiles) */
+  #detail .feed {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+  }
+  #detail .feed img, #detail .feed .feed-loading {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #1a1a22;
+    border: 1px solid rgba(255,255,255,0.06);
+    object-fit: cover;
+    display: block;
+    transition: transform 0.12s, opacity 0.12s;
+  }
+  #detail .feed img:hover { transform: scale(1.02); opacity: 0.93; }
+  #detail .feed .feed-loading {
+    background: linear-gradient(90deg, #1f1f27, #2a2a35, #1f1f27);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+  }
+  @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+  #detail .feed-empty {
+    padding: 32px 18px; text-align: center;
+    color: rgba(255,255,255,0.5); font-size: 12px;
+    border-radius: 12px;
+    border: 1px dashed rgba(255,255,255,0.12);
+  }
+
+  /* Side-floating social icons */
+  #detail .side-actions {
+    position: absolute;
+    right: 12px; top: 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    z-index: 4;
+  }
+  #detail .side-actions a {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+    transition: transform 0.12s;
+  }
+  #detail .side-actions a:active { transform: scale(0.92); }
+  #detail .side-actions a svg { width: 19px; height: 19px; }
+  #detail .side-actions .snap { background: linear-gradient(135deg, #FFFC00, #FBC02D); }
+  #detail .side-actions .insta { background: linear-gradient(135deg, #f09433, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888); }
+  #detail .side-actions .tiktok { background: linear-gradient(135deg, #010101 0%, #25F4EE 50%, #FE2C55 100%); }
+  #detail .side-actions .reddit { background: linear-gradient(135deg, #FF5700, #FF4500); }
+
+  /* MapLibre attribution tweak */
+  .maplibregl-ctrl-attrib { font-size: 9px !important; }
+
+  /* Cesium overrides */
+  #cesiumContainer {
+    position: absolute;
+    inset: 0;
+    transition: bottom 0.32s cubic-bezier(.16,.84,.32,1);
+  }
+  body.detail-peek #cesiumContainer { bottom: 110px; }
+  body.detail-open #cesiumContainer { bottom: 56vh; }
+  .cesium-viewer-toolbar, .cesium-viewer-animationContainer, .cesium-viewer-timelineContainer,
+  .cesium-viewer-fullscreenContainer, .cesium-viewer-bottom { display: none !important; }
+  .cesium-viewer-cesiumWidgetContainer { background: #1a1a1f !important; }
+  .cesium-credit-lightbox-overlay { display: none !important; }
+  .cesium-widget-credits { display: none !important; }
+
+  /* Back button — toggled directly via JS style.display */
+  #backBtn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 14px);
+    left: 14px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,213,79,0.4);
+    background: linear-gradient(135deg, rgba(255,213,79,0.92), rgba(255,107,0,0.92));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #1a1a1a;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    z-index: 9999;
+    pointer-events: auto;
+    transition: transform 0.12s, box-shadow 0.15s;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  #backBtn:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.65); }
+  #backBtn:active { transform: scale(0.96); }
+  #backBtn svg { display: block; }
+
+  /* Side zoom buttons in Street View */
+  #svZoomBtns {
+    position: fixed;
+    right: 14px;
+    bottom: calc(env(safe-area-inset-bottom) + 130px);
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 9999;
+  }
+  body.sv-main #svZoomBtns { display: flex; }
+  #svZoomBtns .sv-zb {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    background: rgba(20,20,28,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.22);
+    color: #FFD54F;
+    font-size: 22px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+    transition: transform 0.12s, background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+    padding: 0;
+  }
+  #svZoomBtns .sv-zb:hover { background: rgba(40,40,55,0.95); }
+  #svZoomBtns .sv-zb:active { transform: scale(0.92); }
+
+  /* Hint that fades in when SV opens, fades out after 3s */
+  #svScrollHint {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background: rgba(20,20,28,0.78);
+    backdrop-filter: blur(10px);
+    color: #FFD54F;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  #svScrollHint.show { opacity: 1; }
+
+  /* Blackout wipe — SV fades to black quickly (hides the seam), then black
+     fades away revealing Cesium with the camera already overhead. */
+  #svMainContainer {
+    transition: opacity 0.45s ease-out;
+  }
+  #svMainContainer.exiting {
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* Black overlay covers everything during the swap */
+  #blackoutOverlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 50;
+    transition: opacity 0.45s ease-in;
+  }
+  #blackoutOverlay.show { opacity: 1; }
+
+  /* Camera controls */
+  #cameraControls {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 100px);
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 9;
+  }
+  #cameraControls .ctrl {
+    width: 40px; height: 40px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(20,20,28,0.78);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s;
+  }
+  #cameraControls .ctrl:hover { background: rgba(40,40,55,0.92); }
+  #cameraControls .ctrl:active { background: #1976D2; }
+
+  /* Setup banner (when no Google key) */
+  #upgradeBanner {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 88px);
+    left: 12px; right: 12px;
+    background: linear-gradient(135deg, rgba(255,213,79,0.95), rgba(255,107,0,0.95));
+    color: #1a1a1a;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 9;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    cursor: pointer;
+  }
+  #upgradeBanner.hidden { display: none; }
+  #upgradeBanner b { color: #1a1a1a; }
+  #upgradeBanner a { color: #1a1a1a; text-decoration: underline; }
+
+  /* Live data status pills */
+  #liveStatus {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 44px);
+    left: 14px;
+    display: flex;
+    gap: 5px;
+    z-index: 9;
+    pointer-events: none;
+  }
+  #liveStatus .pill {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: rgba(0,200,83,0.92);
+    color: #06140a;
+    text-transform: uppercase;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  #liveStatus .pill.off { background: rgba(255,255,255,0.18); color: rgba(255,255,255,0.55); }
+
+  @media (max-width: 600px) {
+    #header h1 { font-size: 17px; }
+    .vcard { width: 200px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="cesiumContainer" style="display:none"></div>
+<div id="toonContainer" style="display:none;position:absolute;inset:0;background:#a8d8ff;"></div>
+<div id="svMainContainer" style="display:none;position:absolute;inset:0;background:#000;z-index:5"></div>
+<div id="svScrollHint">↕ scroll OR tap − to zoom out</div>
+<div id="blackoutOverlay"></div>
+<video id="aerialVideo" muted playsinline preload="auto"
+  style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:10"></video>
+<div id="svZoomBtns">
+  <button class="sv-zb" id="svZoomOut" title="Zoom out">−</button>
+  <button class="sv-zb" id="svZoomIn" title="Zoom back in">+</button>
+</div>
+<div id="upgradeBanner" class="hidden">⚡ <b>Want photorealistic 3D + live busy data?</b> &nbsp;<a href="setup.html">Add API keys →</a></div>
+<div id="liveStatus"></div>
+<div id="cameraControls">
+  <button class="ctrl" id="zoomIn" title="Zoom in">＋</button>
+  <button class="ctrl" id="zoomOut" title="Zoom out">−</button>
+  <button class="ctrl" id="tiltUp" title="Tilt up">▲</button>
+  <button class="ctrl" id="tiltDown" title="Tilt down">▼</button>
+  <button class="ctrl" id="rotLeft" title="Rotate left">↺</button>
+  <button class="ctrl" id="rotRight" title="Rotate right">↻</button>
+  <button class="ctrl" id="resetView" title="Reset to Old Town">⌂</button>
+  <button class="ctrl" id="toonMode" title="Toggle Toon mode" style="background:linear-gradient(135deg,#FF6B00,#FFD54F);color:#1a1a1a;font-weight:900">🎨</button>
+</div>
+
+<div id="header">
+  <div class="row">
+    <h1>PRAGUE <span class="accent">·</span> SCOUT</h1>
+    <div class="clock"><span class="live-dot"></span><span id="clock">--:--</span></div>
+  </div>
+</div>
+
+<div id="filters">
+  <div class="chip active" data-filter="all">All (28)</div>
+  <div class="chip" data-filter="hot">🔥 Hot now</div>
+  <div class="chip" data-filter="cocktail">🍸 Cocktail</div>
+  <div class="chip" data-filter="club">🪩 Club</div>
+  <div class="chip" data-filter="beer">🍺 Beer / Pub</div>
+  <div class="chip" data-filter="wine">🍷 Wine</div>
+  <div class="chip" data-filter="lounge">🛋️ Lounge</div>
+  <div class="chip" data-filter="hipster">🎨 Hipster</div>
+  <div class="chip" data-filter="mature">👔 Mature</div>
+</div>
+
+<div id="legend">
+  <div class="lbl">Crowd</div>
+  <div class="row"><span class="dot" style="background:#FF1744;color:#FF1744"></span>Packed</div>
+  <div class="row"><span class="dot" style="background:#FF6B00;color:#FF6B00"></span>Busy</div>
+  <div class="row"><span class="dot" style="background:#FFD54F;color:#FFD54F"></span>Warming</div>
+  <div class="row"><span class="dot" style="background:#26A69A;color:#26A69A"></span>Quiet</div>
+</div>
+
+<div id="bottom">
+  <div class="grip"></div>
+  <div id="venueList"></div>
+</div>
+
+<div id="detail">
+  <div class="closebtn" onclick="closeDetail()">✕</div>
+  <div class="expand-bar" id="expandBar">▲ tap for photos · street view · social links</div>
+  <div class="grabber"></div>
+  <div class="header" id="detailHeader"></div>
+  <div class="scrollbody" id="detailBody"></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.122/Build/Cesium/Cesium.js"></script>
+<script>
+// ============ API KEYS (from setup page) ============
+const KEYS = {
+  google: localStorage.getItem('GOOGLE_MAPS_KEY'),
+  besttime: localStorage.getItem('BESTTIME_KEY'),
+  fsq: localStorage.getItem('FSQ_KEY'),
+  yelp: localStorage.getItem('YELP_KEY'),
+  tripadvisor: localStorage.getItem('TRIPADVISOR_KEY'),
+  cseCx: null,
+};
+// Show upgrade banner if no Google key
+if (!KEYS.google) {
+  document.getElementById('upgradeBanner').classList.remove('hidden');
+}
+async function showGoogleTilesFailure(err) {
+  const b = document.getElementById('upgradeBanner');
+  b.classList.remove('hidden');
+  b.style.background = 'linear-gradient(135deg, rgba(255,82,82,0.95), rgba(213,0,0,0.95))';
+  b.style.color = '#fff';
+  // Probe the tile endpoint to surface the REAL error code
+  let detail = err && err.message ? err.message : '(unknown error)';
+  try {
+    const probe = await fetch(`https://tile.googleapis.com/v1/3dtiles/root.json?key=${KEYS.google}`);
+    const txt = await probe.text();
+    detail = `HTTP ${probe.status} — ${txt.slice(0, 380)}`;
+  } catch (e) { detail = `Fetch blocked: ${e.message}`; }
+  b.innerHTML = `⚠️ <b>Google 3D tiles didn't load.</b><br>
+    <span style="font-size:11px;opacity:0.95;display:block;margin-top:4px;font-family:ui-monospace,monospace;background:rgba(0,0,0,0.25);padding:6px 8px;border-radius:6px;text-align:left">${detail.replace(/</g,'&lt;')}</span>
+    <span style="display:block;margin-top:6px;font-size:11px">Most common: <b>billing</b> not enabled on the project, or the key has <b>website restrictions</b>.</span>`;
+  const pill = document.querySelector('#liveStatus .pill');
+  if (pill && pill.textContent.includes('3D')) pill.remove();
+}
+// Render live-data status pills (one per API key)
+(function renderLiveStatus() {
+  const items = [
+    { on: !!KEYS.google,   label: '3D' },
+    { on: !!KEYS.fsq,      label: 'Photos' },
+    { on: !!KEYS.besttime, label: 'Busy' },
+  ];
+  if (!items.some(i => i.on)) return;
+  document.getElementById('liveStatus').innerHTML =
+    items.filter(i => i.on).map(i => `<span class="pill">● ${i.label}</span>`).join('');
+})();
+</script>
+<script>
+// ============ VENUES ============
+const VENUES = [
+  // Cocktail bars
+  { id: 'hemingway', name: "Hemingway Bar", area: "Old Town", type: ["cocktail","mature"], desc: "Classy cocktail temple. Date-spot energy. World-class bartending.", lat: 50.0858, lng: 14.4172, peak: [21,1], baseRange: [10,40] },
+  { id: 'blackangels', name: "Black Angel's Bar", area: "Old Town · U Prince", type: ["cocktail","mature"], desc: "Speakeasy under U Prince. Espresso & dirty martinis.", lat: 50.0871, lng: 14.4212, peak: [21,1], baseRange: [10,40] },
+  { id: 'cobra', name: "Bar Cobra", area: "Vinohrady", type: ["cocktail","mature"], desc: "Where mature locals drink. Cocktails + social energy. Your sweet spot.", lat: 50.0796, lng: 14.4452, peak: [20,2], baseRange: [10,45] },
+  { id: 'lfleur', name: "L'Fleur", area: "Old Town", type: ["cocktail","mature"], desc: "Floral-themed cocktails. Classy without being stuffy.", lat: 50.0860, lng: 14.4269, peak: [21,1], baseRange: [10,40] },
+  { id: 'bugsys', name: "Bugsy's Bar", area: "Pařížská · Old Town", type: ["cocktail","mature"], desc: "Classic Prague cocktail institution. Mixed crowd.", lat: 50.0900, lng: 14.4244, peak: [20,1], baseRange: [15,45] },
+  { id: 'tretters', name: "Tretter's New York Bar", area: "Old Town · Kolkovně", type: ["cocktail","mature"], desc: "1920s NY-style. Tuxedoed bartenders. No phones encouraged.", lat: 50.0903, lng: 14.4228, peak: [21,2], baseRange: [12,42] },
+  { id: 'anonymous', name: "AnonymouS Bar", area: "Old Town · Michalská", type: ["cocktail","mature"], desc: "Mask-themed speakeasy inspired by V for Vendetta — masked bartenders, top mixology.", lat: 50.0852, lng: 14.4196, peak: [21,2], baseRange: [12,55] },
+  { id: 'hangar', name: "Hangar Bar", area: "Old Town · Dušní", type: ["cocktail","party"], desc: "Two-floor 1940s aviation-themed cocktail bar with a wild late-night downstairs club.", lat: 50.0904, lng: 14.4196, peak: [22,4], baseRange: [10,65] },
+  { id: 'bonvivants', name: "Bonvivant's CTC", area: "Vinohrady · Mánesova", type: ["cocktail","mature"], desc: "Hidden NYC-inspired cocktail bar — no menu, bartenders craft to your taste.", lat: 50.0789, lng: 14.4396, peak: [20,1], baseRange: [8,50] },
+  { id: 'hoffa', name: "Hoffa Bar", area: "New Town · Senovážné", type: ["cocktail","mature"], desc: "Industrial-chic cocktail bar with a 12.5m bar overlooking Senovážné square.", lat: 50.0845, lng: 14.4310, peak: [20,1], baseRange: [15,60] },
+  // Wine
+  { id: 'usudu', name: "U Sudu", area: "New Town · Vodičkova", type: ["wine","party"], desc: "Iconic 4-floor labyrinth wine bar with foosball, dance floor, DJs until 5am — packed with locals.", lat: 50.0810, lng: 14.4243, peak: [22,3], baseRange: [15,75] },
+  // Lounges / Mixed
+  { id: 'm1', name: "M1 Lounge Bar & Club", area: "Old Town · Masná", type: ["lounge","club"], desc: "Late-night lounge → club. Mixed mature crowd, dancing later.", lat: 50.0888, lng: 14.4248, peak: [22,3], baseRange: [10,55] },
+  // Beer / Pubs
+  { id: 'lokal', name: "Lokál Dlouhá", area: "Old Town · Dlouhá", type: ["beer"], desc: "70m-long Czech pub serving tank Pilsner Urquell to 1,300 daily — gold standard for hospoda.", lat: 50.0892, lng: 14.4267, peak: [19,23], baseRange: [25,85] },
+  { id: 'upinkasu', name: "U Pinkasů", area: "New Town · Jungmannovo", type: ["beer"], desc: "Founded 1843 — Prague's first pub to serve Pilsner Urquell on tap, three floors plus Gothic garden.", lat: 50.0833, lng: 14.4232, peak: [19,22], baseRange: [20,70] },
+  { id: 'vinohradskyparlament', name: "Vinohradský Parlament", area: "Vinohrady · Korunní", type: ["beer","mature"], desc: "Modern Vinohrady gastropub — upside-down animal sculptures, Czech cooking, big Staropramen list.", lat: 50.0775, lng: 14.4396, peak: [19,23], baseRange: [20,75] },
+  { id: 'pivovarskydum', name: "Pivovarský Dům", area: "New Town · Lípová", type: ["beer"], desc: "Microbrewery with experimental beers — banana, coffee, cherry — plus self-serve table-tap 'Giraffe'.", lat: 50.0764, lng: 14.4256, peak: [19,22], baseRange: [20,65] },
+  // Clubs
+  { id: 'duplex', name: "Duplex", area: "Wenceslas Sq · Rooftop", type: ["club","party"], desc: "Rooftop megaclub. Tourist-heavy but always packed. Glass dance floor.", lat: 50.0814, lng: 14.4268, peak: [23,4], baseRange: [5,80] },
+  { id: 'karlovy', name: "Karlovy Lázně", area: "By Charles Bridge", type: ["club","party"], desc: "5 floors, 5 music styles. Largest club in Central Europe.", lat: 50.0863, lng: 14.4137, peak: [23,4], baseRange: [10,90] },
+  { id: 'roxy', name: "Roxy", area: "Dlouhá 33 · Old Town", type: ["club","party"], desc: "Underground techno + electronic. Younger crowd, serious music.", lat: 50.0901, lng: 14.4253, peak: [23,5], baseRange: [5,75] },
+  { id: 'chapeau', name: "Chapeau Rouge", area: "Jakubská · Old Town", type: ["club","party"], desc: "Three floors of wild. Late-night, anything goes.", lat: 50.0888, lng: 14.4258, peak: [23,4], baseRange: [10,75] },
+  { id: 'lucerna', name: "Lucerna Music Bar", area: "Štěpánská · 80s/90s", type: ["club","party"], desc: "Famous 80s/90s parties Fri/Sat. Mixed-age, fun energy.", lat: 50.0815, lng: 14.4267, peak: [22,3], baseRange: [10,75] },
+  { id: 'mecca', name: "Mecca Club", area: "Holešovice", type: ["club","party"], desc: "House/EDM. Bigger production, away from tourist center.", lat: 50.1069, lng: 14.4517, peak: [23,5], baseRange: [5,70] },
+  { id: 'sasazu', name: "SaSaZu", area: "Holešovice · market", type: ["club","party"], desc: "Massive Holešovice market club hosting big-name international DJs and concerts.", lat: 50.1024, lng: 14.4486, peak: [23,4], baseRange: [5,80] },
+  { id: 'crossclub', name: "Cross Club", area: "Holešovice · Plynární", type: ["club","hipster","party"], desc: "Steampunk industrial labyrinth in a former factory — drum & bass to live bands, alternative scene.", lat: 50.1041, lng: 14.4453, peak: [22,4], baseRange: [15,75] },
+  // Hipster / Cultural
+  { id: 'kasarna', name: "Kasárna Karlín", area: "Karlín · Prvního pluku", type: ["hipster","lounge"], desc: "Former military barracks turned cultural courtyard — summer cinema, firepits, multiple bars, live music.", lat: 50.0928, lng: 14.4471, peak: [19,1], baseRange: [25,80] },
+  { id: 'vnitroblock', name: "Vnitroblock", area: "Holešovice · Tusarova", type: ["hipster","lounge"], desc: "Old factory courtyard cafe-bar with mini cinema, design shops and weekend dance/party events.", lat: 50.1054, lng: 14.4440, peak: [18,23], baseRange: [30,70] },
+  // More clubs
+  { id: 'epic', name: "Epic Prague", area: "Old Town · Revoluční", type: ["club","party"], desc: "Three-floor club: hip-hop/R&B, house, and live concerts — top international DJs, packed Fri/Sat.", lat: 50.0916, lng: 14.4274, peak: [23,5], baseRange: [10,85] },
+  { id: 'neverland', name: "Neverland Prague", area: "Old Town · Krocínova", type: ["club","party"], desc: "Stylish multi-floor club near the river — house/EDM mainroom, dressed-up crowd, late-night energy.", lat: 50.0837, lng: 14.4154, peak: [23,5], baseRange: [10,80] },
+];
+
+// Map venue id → image filename (some are .png)
+const VENUE_IMG = {
+  hemingway: 'hemingway.jpg', blackangels: 'blackangels.jpg', cobra: 'cobra.jpg',
+  lfleur: 'lfleur.png', bugsys: 'bugsys.jpg', tretters: 'tretters.jpg',
+  m1: 'm1.jpg', duplex: 'duplex.jpg', karlovy: 'karlovy.jpg', roxy: 'roxy.jpg',
+  chapeau: 'chapeau.jpg', lucerna: 'lucerna.jpg', mecca: 'mecca.jpg',
+  anonymous: 'anonymous.png', hangar: 'hangar.jpg', usudu: 'usudu.jpg',
+  lokal: 'lokal.jpg', upinkasu: 'upinkasu.jpg', vinohradskyparlament: 'vinohradskyparlament.jpg',
+  sasazu: 'sasazu.jpg', crossclub: 'crossclub.jpg', kasarna: 'kasarna.jpg',
+  vnitroblock: 'vnitroblock.jpg', pivovarskydum: 'pivovarskydum.jpg', hoffa: 'hoffa.jpg',
+  // No image: bonvivants
+};
+function venueImage(id) {
+  const f = VENUE_IMG[id];
+  return f ? `images/${f}` : null;
+}
+
+// ============ HEAT ESTIMATION ============
+function venueScore(v, now) {
+  const hour = now.getHours() + now.getMinutes()/60;
+  const dow = now.getDay();
+  const [peakStart, peakEnd] = v.peak;
+  const inWindow = peakEnd < peakStart
+    ? (hour >= peakStart || hour <= peakEnd)
+    : (hour >= peakStart && hour <= peakEnd);
+  let distScore;
+  if (inWindow) {
+    let center = peakStart + ((peakEnd - peakStart + 24) % 24) / 2;
+    if (center >= 24) center -= 24;
+    const distHrs = Math.abs(hour - center);
+    const wrapDist = Math.min(distHrs, 24 - distHrs);
+    distScore = Math.max(0.55, 1 - wrapDist / 4);
+  } else {
+    const distFromPeak = Math.min(
+      Math.abs(hour - peakStart),
+      Math.abs(hour - peakEnd),
+      Math.abs(hour - peakStart + 24),
+      Math.abs(hour - peakStart - 24),
+    );
+    distScore = Math.max(0.05, 0.4 - distFromPeak / 20);
+  }
+  const dowMultiplier = (dow === 5 || dow === 6) ? 1.15 : (dow === 0 || dow === 4 ? 1.0 : 0.85);
+  const baseRange = v.baseRange;
+  const raw = baseRange[0] + (baseRange[1] - baseRange[0]) * distScore * dowMultiplier;
+  const jitter = (Math.sin(hour * 7 + v.lat * 100 + v.lng * 100) + 1) * 4;
+  return Math.max(0, Math.min(100, Math.round(raw + jitter)));
+}
+
+function scoreColor(s) {
+  if (s >= 75) return '#FF1744';
+  if (s >= 55) return '#FF6B00';
+  if (s >= 30) return '#FFD54F';
+  return '#26A69A';
+}
+function scoreLabel(s) {
+  if (s >= 75) return 'PACKED';
+  if (s >= 55) return 'BUSY';
+  if (s >= 30) return 'WARMING';
+  return 'QUIET';
+}
+function scoreVibeText(v, s) {
+  if (s >= 75) return `${v.name} is going off right now. Walk in, you'll feel it at the door.`;
+  if (s >= 55) return `${v.name} is busy and growing. Good time to roll up — crowd's there but you can still get a spot.`;
+  if (s >= 30) return `${v.name} is starting to fill up. Early but the energy is building.`;
+  return `${v.name} is quiet right now. Either too early or it's a slow night here.`;
+}
+
+// ============ MAP — CESIUM 3D (if Google key) or SATELLITE FALLBACK ============
+let map = null;
+let cesiumViewer = null;
+let cesiumEntities = {};
+
+// =====================================================================
+// SIMS-STYLE 3D characters around the focused venue.
+// CesiumMan glTF (public Khronos sample) with built-in walk animation,
+// instanced N times per venue with color variety + multi-waypoint random
+// walks so the crowd doesn't move in lockstep.
+// =====================================================================
+const CHARACTER_GLB = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb';
+const CHAR_COLORS = [
+  '#ff6b9d', '#4dabf7', '#51cf66', '#ffd43b',
+  '#e599f7', '#ff8787', '#5c7cfa', '#94d82d',
+  '#fcc419', '#ff922b', '#9775fa', '#74c0fc',
+];
+const _characterEntities = [];
+
+function clearCharacters() {
+  if (!cesiumViewer) return;
+  for (const e of _characterEntities) cesiumViewer.entities.remove(e);
+  _characterEntities.length = 0;
+}
+
+function _spawnOne(v, groundHeight, opts) {
+  const lat0 = v.lat * Math.PI / 180;
+  // Build a 6-waypoint random walk so each character wanders independently
+  const start = Cesium.JulianDate.now();
+  const startOffset = Math.random() * 8; // stagger walk start so they don't sync
+  const sampled = new Cesium.SampledPositionProperty();
+  let curLat = v.lat + (opts.startR * Math.cos(opts.angle)) / 111320;
+  let curLng = v.lng + (opts.startR * Math.sin(opts.angle)) / (111320 * Math.cos(lat0));
+  let t = Cesium.JulianDate.addSeconds(start, startOffset, new Cesium.JulianDate());
+  sampled.addSample(t, Cesium.Cartesian3.fromDegrees(curLng, curLat, groundHeight));
+  for (let w = 0; w < 6; w++) {
+    const stepAngle = Math.random() * 2 * Math.PI;
+    const stepDist  = opts.stepRange[0] + Math.random() * (opts.stepRange[1] - opts.stepRange[0]);
+    curLat += (stepDist * Math.cos(stepAngle)) / 111320;
+    curLng += (stepDist * Math.sin(stepAngle)) / (111320 * Math.cos(lat0));
+    // Stay roughly within the activity bubble for this venue
+    const dN = (curLat - v.lat) * 111320;
+    const dE = (curLng - v.lng) * 111320 * Math.cos(lat0);
+    const dist = Math.sqrt(dN*dN + dE*dE);
+    if (dist > opts.maxDist) {
+      // pull back toward the venue
+      const pull = (dist - opts.maxDist) / dist;
+      curLat = v.lat + (1 - pull) * (curLat - v.lat);
+      curLng = v.lng + (1 - pull) * (curLng - v.lng);
+    }
+    const dt = 12 + Math.random() * 10; // 12-22s per waypoint
+    t = Cesium.JulianDate.addSeconds(t, dt, new Cesium.JulianDate());
+    sampled.addSample(t, Cesium.Cartesian3.fromDegrees(curLng, curLat, groundHeight));
+  }
+  sampled.setInterpolationOptions({
+    interpolationDegree: 1,
+    interpolationAlgorithm: Cesium.LinearApproximation,
+  });
+  const color = CHAR_COLORS[Math.floor(Math.random() * CHAR_COLORS.length)];
+  const entity = cesiumViewer.entities.add({
+    position: sampled,
+    orientation: new Cesium.VelocityOrientationProperty(sampled),
+    model: {
+      uri: CHARACTER_GLB,
+      scale: opts.scale,
+      runAnimations: true,
+      clampAnimations: false,
+      heightReference: Cesium.HeightReference.NONE,
+      minimumPixelSize: 28,
+      maximumScale: 6,
+      // Tint the character — different "outfit" per spawn
+      color: Cesium.Color.fromCssColorString(color),
+      colorBlendMode: Cesium.ColorBlendMode.MIX,
+      colorBlendAmount: 0.55,
+    },
+  });
+  _characterEntities.push(entity);
+  return t; // last sample time
+}
+
+async function spawnVenueCharacters(v) {
+  if (!cesiumViewer) return;
+  clearCharacters();
+  const score = venueScore(v, new Date());
+  // 5 chars at score 20 → 22 chars at score 95
+  const count = Math.max(5, Math.min(22, Math.round(score / 4.5)));
+
+  // Ground height from the 3D tiles (Prague is ~200m above sea level)
+  let groundHeight = 200;
+  try {
+    const positions = [Cesium.Cartographic.fromDegrees(v.lng, v.lat)];
+    const sampled = await cesiumViewer.scene.sampleHeightMostDetailed(positions);
+    if (sampled && sampled[0] && Number.isFinite(sampled[0].height)) {
+      groundHeight = sampled[0].height + 0.3;
+    }
+  } catch (_) { /* fall back */ }
+
+  // Two crowd types:
+  //   QUEUE — clustered tight near the entrance (~60% of crowd)
+  //   WALKERS — looser, walking past on adjacent street (~40%)
+  const queueCount  = Math.round(count * 0.6);
+  const walkerCount = count - queueCount;
+  let lastTime = Cesium.JulianDate.now();
+
+  for (let i = 0; i < queueCount; i++) {
+    const t = _spawnOne(v, groundHeight, {
+      startR: 3 + Math.random() * 6,        // 3-9m from venue
+      angle: Math.random() * 2 * Math.PI,
+      stepRange: [1.2, 3.0],                 // small shuffles
+      maxDist: 12,
+      scale: 1.55 + Math.random() * 0.35,
+    });
+    if (Cesium.JulianDate.greaterThan(t, lastTime)) lastTime = t;
+  }
+  for (let i = 0; i < walkerCount; i++) {
+    const t = _spawnOne(v, groundHeight, {
+      startR: 14 + Math.random() * 16,       // 14-30m from venue
+      angle: Math.random() * 2 * Math.PI,
+      stepRange: [4, 9],                     // bigger strides
+      maxDist: 35,
+      scale: 1.55 + Math.random() * 0.35,
+    });
+    if (Cesium.JulianDate.greaterThan(t, lastTime)) lastTime = t;
+  }
+
+  // Run the clock so animations + paths play
+  const now = Cesium.JulianDate.now();
+  cesiumViewer.clock.shouldAnimate = true;
+  cesiumViewer.clock.startTime = now.clone();
+  cesiumViewer.clock.currentTime = now.clone();
+  cesiumViewer.clock.stopTime = lastTime.clone();
+  cesiumViewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP;
+  cesiumViewer.clock.multiplier = 1;
+  cesiumViewer.scene.requestRender();
+}
+
+function buildVenueEntity(v) {
+  const score = venueScore(v, new Date());
+  const color = scoreColor(score);
+  const cesiumColor = Cesium.Color.fromCssColorString(color);
+  // Position uses CallbackProperty so the marker auto-jumps when Places
+  // API resolves the precise coordinates.
+  const labelPos = new Cesium.CallbackProperty(() =>
+    Cesium.Cartesian3.fromDegrees(v.lng, v.lat, 90), false);
+  const entity = cesiumViewer.entities.add({
+    id: v.id,
+    position: labelPos,
+    point: {
+      pixelSize: 26,
+      color: cesiumColor,
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 5,
+      heightReference: Cesium.HeightReference.NONE,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    label: {
+      text: `📍 ${v.name}\n${score} ${scoreLabel(score)}`,
+      font: 'bold 16px -apple-system, system-ui, sans-serif',
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 4,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -28),
+      showBackground: true,
+      backgroundColor: new Cesium.Color(0.06, 0.06, 0.10, 0.92),
+      backgroundPadding: new Cesium.Cartesian2(12, 8),
+      scaleByDistance: new Cesium.NearFarScalar(80, 1.05, 4000, 0.4),
+      translucencyByDistance: new Cesium.NearFarScalar(1000, 1, 5000, 0.3),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    data: v,
+  });
+  cesiumEntities[v.id] = entity;
+  return entity;
+}
+
+async function initCesium3D() {
+  document.getElementById('map').style.display = 'none';
+  document.getElementById('cesiumContainer').style.display = 'block';
+  Cesium.Ion.defaultAccessToken = ''; // Not using Cesium Ion — Google tiles are direct
+  Cesium.GoogleMaps.defaultApiKey = KEYS.google;
+  cesiumViewer = new Cesium.Viewer('cesiumContainer', {
+    baseLayerPicker: false,
+    geocoder: false,
+    homeButton: false,
+    sceneModePicker: false,
+    timeline: false,
+    animation: false,
+    fullscreenButton: false,
+    navigationHelpButton: false,
+    selectionIndicator: false,
+    infoBox: false,
+    imageryProvider: false,
+    skyAtmosphere: false,
+    requestRenderMode: true,
+  });
+  cesiumViewer.scene.globe.show = false;
+  // Add Google Photorealistic 3D Tiles
+  try {
+    // Boost parallel tile requests BEFORE loading
+    Cesium.RequestScheduler.maximumRequests = 64;
+    Cesium.RequestScheduler.maximumRequestsPerServer = 24;
+    Cesium.RequestScheduler.throttleRequests = false;
+
+    const tileset = await Cesium.createGooglePhotorealistic3DTileset();
+    tileset.maximumScreenSpaceError = 14;          // close to default — quality vs speed balance
+    tileset.dynamicScreenSpaceError = false;       // never blur during movement
+    tileset.skipLevelOfDetail = true;              // skip intermediate LODs → faster
+    tileset.baseScreenSpaceError = 1024;
+    tileset.skipScreenSpaceErrorFactor = 16;
+    tileset.skipLevels = 0;                        // don't skip too aggressively (keeps quality)
+    tileset.immediatelyLoadDesiredLevelOfDetail = true;
+    tileset.cacheBytes = 2147483648;               // 2 GB tile cache
+    tileset.maximumCacheOverflowBytes = 1073741824;// +1 GB overflow
+    tileset.preferLeaves = true;
+    tileset.preloadFlightDestinations = true;      // pre-fetch at flyTo target
+    tileset.foveatedScreenSpaceError = true;       // higher detail at center, less at edges
+    tileset.foveatedConeSize = 0.2;
+    cesiumViewer.scene.primitives.add(tileset);
+    cesiumViewer.resolutionScale = window.devicePixelRatio || 1;
+    cesiumViewer.scene.postProcessStages.fxaa = true;
+
+    // Google-Maps-style controls: drag pans the city, wheel zooms, right-drag tilts.
+    // Cesium's defaults already do this — we just snap up the inertia and cap zoom.
+    const cc = cesiumViewer.scene.screenSpaceCameraController;
+    cc.enableInputs = true;
+    cc.enableZoom = true;
+    cc.enableRotate = true;
+    cc.enableTilt = true;
+    cc.enableLook = true;
+    cc.enableCollisionDetection = true;     // can't go through ground
+    cc.inertiaSpin = 0.5;                   // snappier response (was 0.85)
+    cc.inertiaTranslate = 0.5;
+    cc.inertiaZoom = 0.5;
+    cc.minimumZoomDistance = 50;            // can zoom in close to the building
+    cc.maximumZoomDistance = 30000;
+
+    window._tileset = tileset;
+  } catch (e) {
+    console.warn('Google 3D tiles failed, falling back to MapLibre satellite', e);
+    showGoogleTilesFailure(e);
+    document.getElementById('map').style.display = 'block';
+    document.getElementById('cesiumContainer').style.display = 'none';
+    initMapLibre();
+    return;
+  }
+  // Set initial camera over Prague Old Town Square — low enough to feel inside it
+  cesiumViewer.scene.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(14.4205, 50.0860, 480),
+    orientation: {
+      heading: Cesium.Math.toRadians(-25),
+      pitch: Cesium.Math.toRadians(-30),
+      roll: 0,
+    }
+  });
+  applyDayNightFilter();
+  // Add venue markers — bigger pin + bright label, on a vertical pole anchored to the building
+  for (const v of VENUES) buildVenueEntity(v);
+  // Pre-fetch precise Places API coordinates for ALL venues, then re-position
+  // each marker so they sit on the actual building, not the imprecise hand-coded spot.
+  Promise.all(VENUES.map(v =>
+    resolveVenue(v).then(p => {
+      if (!p) return;
+      v.lat = p.lat; v.lng = p.lng; v.placeId = p.placeId; v.googlePhotos = p.photos;
+      // entities pick up the new lat/lng via CallbackProperty automatically
+      cesiumViewer.scene.requestRender();
+    }).catch(() => {})
+  )).catch(() => {});
+  // Click handler
+  const handler = new Cesium.ScreenSpaceEventHandler(cesiumViewer.scene.canvas);
+  handler.setInputAction((click) => {
+    const picked = cesiumViewer.scene.pick(click.position);
+    if (Cesium.defined(picked) && picked.id && picked.id.id) {
+      openDetail(picked.id.id);
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  renderVenueList();
+}
+
+// =====================================================================
+// Google Custom Search Image API — recent images of the bar from across
+// the web (Instagram, TripAdvisor, news, blogs) filtered by date.
+// =====================================================================
+// Holds the most recent CSE error/status so we can show it on the page itself.
+window._cseLastStatus = '';
+async function fetchRecentImages(v, dateRestrict) {
+  if (!KEYS.google || !KEYS.cseCx) {
+    window._cseLastStatus = !KEYS.google ? 'No Google key set' : 'No CSE engine ID set';
+    return [];
+  }
+  const q = `${v.name} Prague`;
+  const baseParams = new URLSearchParams({
+    key: KEYS.google,
+    cx:  KEYS.cseCx,
+    q,
+    searchType: 'image',
+    num: '10',
+    safe: 'off',
+  });
+  if (dateRestrict) baseParams.set('dateRestrict', dateRestrict);
+
+  // Try the standard Custom Search endpoint first. If the project rejects
+  // (site-restricted engines need the /siterestrict variant), retry there.
+  const endpoints = [
+    'https://www.googleapis.com/customsearch/v1',
+    'https://www.googleapis.com/customsearch/v1/siterestrict',
+  ];
+  let lastErr = '';
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(`${ep}?${baseParams.toString()}`);
+      if (!r.ok) {
+        const txt = await r.text();
+        let msg = `HTTP ${r.status}`;
+        try {
+          const j = JSON.parse(txt);
+          if (j.error && j.error.message) msg += ' — ' + j.error.message;
+        } catch (_) { msg += ' — ' + txt.slice(0, 200); }
+        lastErr = msg;
+        // 403 might mean wrong endpoint for engine type → fall through to next
+        if (r.status === 403) continue;
+        window._cseLastStatus = msg;
+        return [];
+      }
+      const data = await r.json();
+      window._cseLastStatus = `OK (${ep.endsWith('/siterestrict') ? 'siterestrict' : 'standard'}) — ${(data.items || []).length} results`;
+      if (!data.items) return [];
+      return data.items.map(i => ({
+        thumb:  i.image && i.image.thumbnailLink ? i.image.thumbnailLink : i.link,
+        full:   i.link,
+        source: i.displayLink || '',
+        title:  i.title || '',
+        context: i.image && i.image.contextLink ? i.image.contextLink : i.link,
+      }));
+    } catch (e) {
+      lastErr = 'Network error: ' + (e && e.message);
+    }
+  }
+  window._cseLastStatus = lastErr || 'Both endpoints failed';
+  return [];
+}
+
+// =====================================================================
+// Aerial View API — Google's cinematic flyover videos for any address.
+// We fire a render request when a venue is opened. If the video is
+// ALREADY pre-rendered for that location, it returns ACTIVE immediately
+// with playback URIs. Otherwise we poll lookupVideo until ACTIVE.
+// =====================================================================
+const _aerialCache = {};
+async function getAerialVideo(v) {
+  const cacheKey = v.placeId || `${v.lng},${v.lat}`;
+  if (_aerialCache[cacheKey] !== undefined) return _aerialCache[cacheKey];
+  if (!KEYS.google) return null;
+  const address = v.address || `${v.name}, Prague, Czech Republic`;
+  try {
+    const r = await fetch('https://aerialview.googleapis.com/v1/videos:renderVideo', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': KEYS.google,
+      },
+      body: JSON.stringify({ address }),
+    });
+    if (!r.ok) {
+      console.warn('Aerial View render failed', r.status, await r.text());
+      _aerialCache[cacheKey] = null;
+      return null;
+    }
+    let data = await r.json();
+    // If still PROCESSING, poll lookupVideo until ACTIVE (or 30s timeout)
+    if (data.state === 'PROCESSING' && data.metadataId) {
+      const start = Date.now();
+      while (Date.now() - start < 60000) {
+        await new Promise(res => setTimeout(res, 3500));
+        const lr = await fetch('https://aerialview.googleapis.com/v1/videos:lookupVideo?videoId=' + encodeURIComponent(data.metadataId), {
+          headers: { 'X-Goog-Api-Key': KEYS.google },
+        });
+        if (!lr.ok) break;
+        data = await lr.json();
+        if (data.state === 'ACTIVE' || data.state === 'FAILED') break;
+      }
+    }
+    if (data.state === 'ACTIVE' && data.uris) {
+      // Prefer landscape MP4_HIGH, fallback through MP4_MEDIUM and HLS
+      const pickUri = (g) => g && (g.landscapeUri || g.portraitUri);
+      const url = pickUri(data.uris.MP4_HIGH) ||
+                  pickUri(data.uris.MP4_MEDIUM) ||
+                  pickUri(data.uris.HLS);
+      _aerialCache[cacheKey] = url || null;
+      return _aerialCache[cacheKey];
+    }
+    _aerialCache[cacheKey] = null;
+    return null;
+  } catch (e) {
+    console.warn('Aerial View error', e);
+    _aerialCache[cacheKey] = null;
+    return null;
+  }
+}
+
+// =====================================================================
+// Lazy-load the Google Maps JavaScript API (needed for StreetViewPanorama
+// + anchored markers). Returns a promise that resolves when ready.
+// =====================================================================
+let _mapsJsPromise = null;
+function loadGoogleMapsJS() {
+  if (_mapsJsPromise) return _mapsJsPromise;
+  if (!KEYS.google) return Promise.reject(new Error('no google key'));
+  _mapsJsPromise = new Promise((resolve, reject) => {
+    window.__mapsCb = () => resolve(window.google);
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(KEYS.google)}&v=weekly&libraries=geometry,marker&callback=__mapsCb&loading=async`;
+    s.async = true;
+    s.onerror = () => reject(new Error('maps js failed to load'));
+    document.head.appendChild(s);
+  });
+  return _mapsJsPromise;
+}
+
+// Wrap StreetViewService.getPanorama (callback API) in a Promise.
+function getPanoPromise(sv, request) {
+  return new Promise((resolve, reject) => {
+    sv.getPanorama(request, (data, status) => {
+      if (status === google.maps.StreetViewStatus.OK && data) resolve(data);
+      else reject(status);
+    });
+  });
+}
+
+// Render an interactive Street View into the given container, with a
+// blue marker that stays anchored to the bar's real-world location.
+async function renderInteractiveStreetView(container, v) {
+  try {
+    await loadGoogleMapsJS();
+    const sv = new google.maps.StreetViewService();
+    let data = null;
+    // Outdoor first, expanding radius
+    for (const radius of [60, 120, 250]) {
+      try {
+        data = await getPanoPromise(sv, {
+          location: { lat: v.lat, lng: v.lng },
+          radius,
+          source: google.maps.StreetViewSource.OUTDOOR,
+          preference: google.maps.StreetViewPreference.NEAREST,
+        });
+        if (data) break;
+      } catch (_) { /* try next radius */ }
+    }
+    if (!data) {
+      // Fallback: any pano (may be indoor)
+      try {
+        data = await getPanoPromise(sv, { location: { lat: v.lat, lng: v.lng }, radius: 250 });
+      } catch (_) { /* nothing */ }
+    }
+    if (!data || !data.location) {
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;font-size:12px;padding:0 18px;text-align:center">No Google Street View panorama available within 250m of this venue.</div>';
+      return;
+    }
+    const venueLatLng = new google.maps.LatLng(v.lat, v.lng);
+    const heading = google.maps.geometry.spherical.computeHeading(data.location.latLng, venueLatLng);
+    const panorama = new google.maps.StreetViewPanorama(container, {
+      pano: data.location.pano,
+      pov: { heading, pitch: 6 },
+      zoom: 0.4,
+      addressControl: false,
+      showRoadLabels: false,
+      fullscreenControl: false,
+      motionTrackingControl: false,
+      panControl: true,
+      zoomControl: true,
+    });
+    // Plain Marker — anchored to venue lat/lng. Stays glued as you pan.
+    new google.maps.Marker({
+      position: venueLatLng,
+      map: panorama,
+      title: v.name,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: '#1E88E5',
+        fillOpacity: 1,
+        strokeColor: '#FFFFFF',
+        strokeWeight: 3,
+        scale: 13,
+      },
+    });
+    // Always-open InfoWindow showing the bar name above the marker
+    new google.maps.InfoWindow({
+      content: `<div style="color:#1a1a1a;font-weight:800;font-size:13px;padding:1px 4px;font-family:-apple-system,system-ui,sans-serif">📍 ${v.name.replace(/</g,'&lt;')}</div>`,
+      position: venueLatLng,
+      disableAutoPan: true,
+    }).open(panorama);
+  } catch (e) {
+    console.warn('Street View JS failed', e);
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;font-size:12px;padding:0 18px;text-align:center">Street View couldn't load — ${(e && e.message) || e}</div>`;
+  }
+}
+
+// =====================================================================
+// Resolve EVERY venue to its real Google Places coordinates + placeId.
+// Our hand-coded lat/lng is often 50-100m off → camera lands at a church
+// or Starbucks. Places API gives us the exact spot Google has on file.
+// Result is cached in localStorage so we only pay once per venue.
+// =====================================================================
+const placeCache = JSON.parse(localStorage.getItem('placeCache_v2') || '{}');
+
+async function resolveVenue(v) {
+  if (placeCache[v.id]) return placeCache[v.id];
+  if (!KEYS.google) return null;
+  try {
+    const r = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': KEYS.google,
+        'X-Goog-FieldMask': 'places.id,places.location,places.displayName,places.formattedAddress,places.photos',
+      },
+      body: JSON.stringify({
+        textQuery: `${v.name} ${v.area.split('·')[0].trim()} Prague`,
+        locationBias: {
+          circle: {
+            center: { latitude: v.lat, longitude: v.lng },
+            radius: 600.0,
+          },
+        },
+        maxResultCount: 1,
+      }),
+    });
+    if (!r.ok) {
+      console.warn('Places search failed', r.status, await r.text());
+      return null;
+    }
+    const j = await r.json();
+    if (!j.places || !j.places.length) return null;
+    const p = j.places[0];
+    if (!p.location) return null;
+    const data = {
+      placeId: p.id,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      name: p.displayName?.text || v.name,
+      address: p.formattedAddress || '',
+      photos: (p.photos || []).map(ph => ph.name), // photo resource names
+    };
+    placeCache[v.id] = data;
+    localStorage.setItem('placeCache_v2', JSON.stringify(placeCache));
+    return data;
+  } catch (e) {
+    console.warn('Places API error', e);
+    return null;
+  }
+}
+
+// Find the nearest OUTDOOR Street View pano (no indoor virtual tours),
+// compute the heading panorama→venue, and re-render the iframe so the
+// camera initially looks at the storefront.
+async function aimStreetViewAtVenue(v) {
+  try {
+    // Try expanding radius until we find an outdoor pano (max 200m)
+    let meta = null;
+    for (const radius of [50, 100, 200]) {
+      const r = await fetch(
+        `https://maps.googleapis.com/maps/api/streetview/metadata?location=${v.lat},${v.lng}&radius=${radius}&source=outdoor&key=${KEYS.google}`
+      ).then(r => r.json());
+      if (r.status === 'OK' && r.pano_id && r.location) { meta = r; break; }
+    }
+    if (!meta) {
+      // Fallback: any pano (may be indoor) with default radius
+      const r = await fetch(
+        `https://maps.googleapis.com/maps/api/streetview/metadata?location=${v.lat},${v.lng}&key=${KEYS.google}`
+      ).then(r => r.json());
+      if (r.status === 'OK') meta = r;
+    }
+    if (!meta || !meta.location) return;
+
+    // Bearing from panorama to venue
+    const lat1 = meta.location.lat * Math.PI / 180;
+    const lat2 = v.lat * Math.PI / 180;
+    const dLng = (v.lng - meta.location.lng) * Math.PI / 180;
+    const y = Math.sin(dLng) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+    const heading = ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+
+    const frame = document.getElementById('svFrame');
+    if (!frame) return;
+    const url = meta.pano_id
+      ? `https://www.google.com/maps/embed/v1/streetview?key=${KEYS.google}&pano=${encodeURIComponent(meta.pano_id)}&heading=${heading.toFixed(1)}&pitch=10&fov=100`
+      : `https://www.google.com/maps/embed/v1/streetview?key=${KEYS.google}&location=${meta.location.lat},${meta.location.lng}&heading=${heading.toFixed(1)}&pitch=10&fov=100`;
+    frame.src = url;
+  } catch (e) { console.warn('SV aim failed', e); }
+}
+
+async function flyToVenueCesium(v) {
+  if (!cesiumViewer) return;
+  cesiumViewer.resize();
+  setTimeout(() => cesiumViewer.resize(), 380);
+
+  // 1. Sample real ground height (Prague is ~200m above sea level)
+  let groundHeight = 200;
+  try {
+    const sampled = await cesiumViewer.scene.sampleHeightMostDetailed(
+      [Cesium.Cartographic.fromDegrees(v.lng, v.lat)]
+    );
+    if (sampled && sampled[0] && Number.isFinite(sampled[0].height)) {
+      groundHeight = sampled[0].height;
+    }
+  } catch (_) {}
+
+  // Target = entrance level (street + ~6m, ground floor signage height)
+  const venuePos = Cesium.Cartesian3.fromDegrees(v.lng, v.lat, groundHeight + 6);
+  const lat0 = v.lat * Math.PI / 180;
+
+  // 2. Try 12 candidate camera positions around the venue. For each,
+  //    ray-cast from camera to venue. Pick the one with the longest clear
+  //    line of sight — this is THE building Hemingway is in being visible.
+  const candidates = [];
+  const horizDist = 70;
+  const camAlt = 30; // ~6th floor window across the street
+  for (let i = 0; i < 12; i++) {
+    const headingDeg = (i * 30); // 0, 30, 60, ... 330
+    const headingRad = Cesium.Math.toRadians(headingDeg);
+    const dLat = (horizDist * Math.cos(headingRad)) / 111320;
+    const dLng = (horizDist * Math.sin(headingRad)) / (111320 * Math.cos(lat0));
+    const camPos = Cesium.Cartesian3.fromDegrees(
+      v.lng + dLng, v.lat + dLat, groundHeight + camAlt
+    );
+    const dir = Cesium.Cartesian3.subtract(venuePos, camPos, new Cesium.Cartesian3());
+    const totalDist = Cesium.Cartesian3.magnitude(dir);
+    Cesium.Cartesian3.normalize(dir, dir);
+    const ray = new Cesium.Ray(camPos, dir);
+    let clearDist = totalDist;
+    try {
+      const hit = cesiumViewer.scene.pickFromRay(ray);
+      if (hit && hit.position) {
+        clearDist = Cesium.Cartesian3.distance(camPos, hit.position);
+      }
+    } catch (_) {}
+    candidates.push({ headingDeg, camPos, clearDist, totalDist });
+  }
+  // Best = the one where the ray reaches the venue with no obstruction
+  // (clearDist closest to totalDist). Sort by ratio descending.
+  candidates.sort((a, b) =>
+    (b.clearDist / b.totalDist) - (a.clearDist / a.totalDist)
+  );
+  let best = candidates[0];
+
+  // If even the best candidate is heavily occluded (<70% line of sight),
+  // bail out and use a steep aerial view — guaranteed visible.
+  let pitchDeg, useAerial = false;
+  if (best.clearDist / best.totalDist < 0.70) {
+    useAerial = true;
+  }
+
+  let camPos, heading, pitch;
+  if (useAerial) {
+    // Aerial fallback: directly above-behind the venue, looking down at -55°
+    const seed = (v.id || '').split('').reduce((a,c) => a + c.charCodeAt(0), 0);
+    const aerialHeading = (seed % 4) * 90 + 30;
+    const r = 95;
+    const headingRad = Cesium.Math.toRadians(aerialHeading);
+    const dLat = (r * Math.cos(headingRad) * 0.6) / 111320; // pull in horizontal
+    const dLng = (r * Math.sin(headingRad) * 0.6) / (111320 * Math.cos(lat0));
+    camPos = Cesium.Cartesian3.fromDegrees(v.lng + dLng, v.lat + dLat, groundHeight + 75);
+    heading = Cesium.Math.toRadians(aerialHeading + 180);
+    pitch = Cesium.Math.toRadians(-50);
+  } else {
+    // Use the clear candidate. Compute heading/pitch toward venue.
+    camPos = best.camPos;
+    const direction = Cesium.Cartesian3.subtract(venuePos, camPos, new Cesium.Cartesian3());
+    Cesium.Cartesian3.normalize(direction, direction);
+    const transform = Cesium.Transforms.eastNorthUpToFixedFrame(camPos);
+    const inverse = Cesium.Matrix4.inverse(transform, new Cesium.Matrix4());
+    const localDir = Cesium.Matrix4.multiplyByPointAsVector(inverse, direction, new Cesium.Cartesian3());
+    heading = Math.atan2(localDir.x, localDir.y);
+    const horizMag = Math.sqrt(localDir.x * localDir.x + localDir.y * localDir.y);
+    pitch = Math.atan2(localDir.z, horizMag);
+  }
+
+  cesiumViewer.scene.camera.flyTo({
+    destination: camPos,
+    orientation: { heading, pitch, roll: 0 },
+    duration: 1.5,
+    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+  });
+}
+
+// Day/night atmosphere — Google's tiles are sunlit. We darken aggressively
+// AND add a translucent blue overlay to make the city actually feel nocturnal.
+function applyDayNightFilter() {
+  const hour = new Date().getHours();
+  const isNight = (hour >= 19 || hour < 6);
+  const isDusk = (hour === 18 || hour === 6);
+  const c = document.getElementById('cesiumContainer');
+  if (!c) return;
+
+  // Ensure a single overlay element exists for night/dusk atmosphere
+  let overlay = document.getElementById('cesiumNightOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cesiumNightOverlay';
+    overlay.style.cssText = `
+      position: absolute; inset: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease, background 0.6s ease;
+      z-index: 1;
+      opacity: 0;
+    `;
+    c.appendChild(overlay);
+  }
+
+  if (isNight) {
+    c.style.filter = 'brightness(0.62) saturate(0.7) contrast(1.10) hue-rotate(-15deg)';
+    overlay.style.background = 'radial-gradient(ellipse at 50% 40%, rgba(15,30,80,0) 50%, rgba(10,18,45,0.20) 100%)';
+    overlay.style.mixBlendMode = 'normal';
+    overlay.style.opacity = '1';
+  } else if (isDusk) {
+    c.style.filter = 'brightness(0.78) saturate(1.05) hue-rotate(-8deg) sepia(0.15)';
+    overlay.style.background = 'linear-gradient(180deg, rgba(255,140,60,0.10), rgba(60,30,80,0.12))';
+    overlay.style.mixBlendMode = 'normal';
+    overlay.style.opacity = '1';
+  } else {
+    c.style.filter = '';
+    overlay.style.opacity = '0';
+  }
+}
+// Re-apply hourly so atmosphere updates as time crosses thresholds
+setInterval(applyDayNightFilter, 60 * 1000);
+
+function initMapLibre() {
+  map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      'esri-imagery': {
+        type: 'raster',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: 'Tiles © Esri'
+      },
+      'esri-labels': {
+        type: 'raster',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        maxzoom: 19,
+      }
+    },
+    layers: [
+      { id: 'satellite', type: 'raster', source: 'esri-imagery' },
+      { id: 'labels', type: 'raster', source: 'esri-labels', paint: { 'raster-opacity': 0.85 } }
+    ]
+  },
+  center: [14.4250, 50.0855],
+  zoom: 14.5,
+  pitch: 55,
+  bearing: -20,
+  hash: false,
+  attributionControl: false,
+});
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right');
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.on('load', () => { refreshHeat(); });
+}
+
+// Boot the right map based on whether we have a Google key
+if (KEYS.google) {
+  initCesium3D();
+} else {
+  initMapLibre();
+}
+
+let heatSourceAdded = false;
+function refreshHeat() {
+  const now = new Date();
+  const features = VENUES.map(v => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+    properties: { id: v.id, score: venueScore(v, now), name: v.name }
+  }));
+  const data = { type: 'FeatureCollection', features };
+  if (!map) { renderVenueList(); return; }
+  if (!map.getSource('venues')) {
+    map.addSource('venues', { type: 'geojson', data });
+    // Heat halo
+    map.addLayer({
+      id: 'venue-heat',
+      type: 'heatmap',
+      source: 'venues',
+      maxzoom: 18,
+      paint: {
+        'heatmap-weight': ['interpolate', ['linear'], ['get', 'score'], 0, 0, 100, 1],
+        'heatmap-intensity': 1.4,
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 12, 30, 16, 80],
+        'heatmap-opacity': 0.62,
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0, 'rgba(0,0,0,0)',
+          0.18, 'rgba(38,166,154,0.55)',
+          0.4, 'rgba(255,213,79,0.7)',
+          0.65, 'rgba(255,107,0,0.85)',
+          0.9, 'rgba(255,23,68,0.92)',
+          1.0, 'rgba(255,255,255,0.95)',
+        ],
+      }
+    });
+    // Score circles with white halo for satellite contrast
+    map.addLayer({
+      id: 'venue-circle-bg',
+      type: 'circle',
+      source: 'venues',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get','score'], 0, 11, 100, 26],
+        'circle-color': 'rgba(255,255,255,0.95)',
+        'circle-opacity': 1,
+      }
+    });
+    map.addLayer({
+      id: 'venue-circle',
+      type: 'circle',
+      source: 'venues',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get','score'], 0, 7, 100, 22],
+        'circle-color': [
+          'interpolate', ['linear'], ['get','score'],
+          0, '#26A69A',
+          30, '#FFD54F',
+          55, '#FF6B00',
+          75, '#FF1744',
+        ],
+        'circle-opacity': 0.96,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': 'rgba(0,0,0,0.4)',
+      }
+    });
+    map.on('click', 'venue-circle', (e) => openDetail(e.features[0].properties.id));
+    map.on('click', 'venue-circle-bg', (e) => openDetail(e.features[0].properties.id));
+    map.on('mouseenter', 'venue-circle', () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', 'venue-circle', () => map.getCanvas().style.cursor = '');
+    heatSourceAdded = true;
+  } else {
+    map.getSource('venues').setData(data);
+  }
+  renderVenueList();
+}
+
+// ============ UI: venue list ============
+let activeFilter = 'all';
+function renderVenueList() {
+  const now = new Date();
+  let list = VENUES.map(v => ({ v, score: venueScore(v, now) }));
+  if (activeFilter === 'hot') list = list.filter(x => x.score >= 55);
+  else if (activeFilter !== 'all') list = list.filter(x => x.v.type.includes(activeFilter));
+  list.sort((a, b) => b.score - a.score);
+  const html = list.map(({v, score}) => {
+    const color = scoreColor(score);
+    const cls = score >= 75 ? 'hot' : score >= 55 ? 'warm' : '';
+    const img = venueImage(v.id);
+    const thumbStyle = img ? `background-image: url('${img}')` : `background: linear-gradient(135deg, ${color}33, ${color}11)`;
+    return `<div class="vcard ${cls}" onclick="openDetail('${v.id}')">
+      <div class="vthumb" style="${thumbStyle}"></div>
+      <div class="vbody">
+        <div class="vname">${v.name}</div>
+        <div class="varea">${v.area}</div>
+        <div class="vstats">
+          <span class="score" style="color:${color}">${score}</span>
+          <span class="scorelabel" style="color:${color}">${scoreLabel(score)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('venueList').innerHTML = html || `<div style="padding:20px;color:#999;font-size:13px">No venues match.</div>`;
+}
+
+// ============ Detail sheet ============
+const SVG_INSTA = `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16M12 0C8.74 0 8.33.01 7.05.07 5.78.13 4.9.33 4.14.63c-.79.31-1.46.72-2.13 1.39C1.34 2.69.93 3.36.62 4.15.32 4.91.12 5.79.06 7.06.01 8.34 0 8.75 0 12s.01 3.66.07 4.94c.06 1.27.26 2.15.56 2.91.31.79.72 1.46 1.39 2.13.67.67 1.34 1.08 2.13 1.39.76.3 1.64.5 2.91.56C8.34 23.99 8.75 24 12 24s3.66-.01 4.94-.07c1.27-.06 2.15-.26 2.91-.56.79-.31 1.46-.72 2.13-1.39.67-.67 1.08-1.34 1.39-2.13.3-.76.5-1.64.56-2.91.06-1.28.07-1.69.07-4.94s-.01-3.66-.07-4.94c-.06-1.27-.26-2.15-.56-2.91-.31-.79-.72-1.46-1.39-2.13-.67-.67-1.34-1.08-2.13-1.39-.76-.3-1.64-.5-2.91-.56C15.66.01 15.25 0 12 0zm0 5.84a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zM12 16a4 4 0 110-8 4 4 0 010 8zm6.41-11.85a1.44 1.44 0 100 2.88 1.44 1.44 0 000-2.88z"/></svg>`;
+const SVG_TIKTOK = `<svg viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005.8 20.1a6.34 6.34 0 0010.86-4.43V8.85a8.16 8.16 0 004.77 1.52V6.93a4.85 4.85 0 01-1.84-.24z"/></svg>`;
+const SVG_SNAP = `<svg viewBox="0 0 24 24" fill="#1a1a1a"><path d="M12.166.5a5.4 5.4 0 015.395 5.395l-.011.81-.005.31c-.013.74-.025 1.428-.105 1.95l-.005.034.013.014.012.01a.55.55 0 00.337.094c.21-.01.494-.103.802-.262.105-.05.225-.077.349-.077.21 0 .421.05.6.144.524.252.604.582.604.802 0 .342-.295.683-.916.911-.078.03-.18.066-.29.105-.422.144-1.062.367-1.232.776-.087.21-.054.482.099.81 0 .005.022.057.022.057.483 1.13 1.555 2.02 2.96 2.495.07.027.21.07.21.07.355.116.892.291.892.685 0 .306-.298.587-1.014.79-.187.066-.398.137-.612.187-.355.094-.515.235-.6.46-.054.106-.05.301-.1.467-.113.42-.342.66-.685.7-.07.005-.15.005-.236.005-.31 0-.654-.05-1.054-.1a4.05 4.05 0 00-.794-.087c-.35 0-.572.05-.806.165-.21.094-.38.215-.582.342-.354.215-.708.42-1.218.61-.355.143-.81.215-1.265.265-.456.05-.91.066-1.366.066H10.6c-.456 0-.91-.016-1.366-.066-.456-.05-.91-.122-1.265-.265-.51-.19-.864-.395-1.218-.61-.202-.127-.372-.248-.582-.342-.234-.115-.456-.165-.806-.165-.247 0-.503.05-.794.087-.4.05-.744.1-1.054.1-.087 0-.166 0-.236-.005-.343-.04-.572-.28-.685-.7-.05-.166-.046-.36-.1-.467-.085-.225-.245-.366-.6-.46-.214-.05-.425-.121-.612-.187C.566 16.45.27 16.169.27 15.864c0-.394.537-.57.892-.685.07 0 .21-.044.21-.07 1.405-.475 2.477-1.366 2.96-2.495 0 0 .022-.052.022-.057.153-.328.186-.6.099-.81-.17-.41-.81-.632-1.232-.776a18.7 18.7 0 01-.29-.105C1.31 10.638 1 10.297 1 9.955c0-.22.082-.55.604-.802a1.36 1.36 0 01.6-.144c.124 0 .244.027.349.077.308.16.591.252.802.262a.55.55 0 00.337-.094l.012-.01.013-.014-.005-.034c-.08-.522-.092-1.21-.105-1.95l-.005-.31-.011-.81C3.59 4.41 4.04.5 12.166.5z"/></svg>`;
+const SVG_REDDIT = `<svg viewBox="0 0 24 24" fill="white"><path d="M22 12.07c0-1.18-.96-2.14-2.15-2.14-.58 0-1.1.23-1.49.6-1.46-1.05-3.45-1.72-5.66-1.8l.96-4.55 3.16.67c.04.81.71 1.45 1.53 1.45.85 0 1.54-.69 1.54-1.54 0-.85-.69-1.54-1.54-1.54-.6 0-1.13.36-1.37.86l-3.53-.75c-.1-.02-.2 0-.28.05-.08.05-.14.13-.16.23l-1.07 5.04c-2.24.07-4.27.74-5.74 1.8a2.13 2.13 0 00-1.5-.6C2.96 9.93 2 10.89 2 12.07c0 .87.52 1.62 1.27 1.95-.04.21-.05.42-.05.64 0 3.24 3.78 5.87 8.43 5.87s8.43-2.63 8.43-5.87c0-.21-.02-.42-.05-.62.74-.34 1.27-1.09 1.27-1.97zM7 13.55c0-.86.69-1.55 1.54-1.55s1.54.69 1.54 1.55a1.54 1.54 0 11-3.08 0zm8.79 4.16c-1.04 1.04-3.03 1.13-3.79 1.13-.76 0-2.74-.09-3.79-1.13-.16-.16-.16-.41 0-.56.16-.16.42-.16.57 0 .66.66 2.07.89 3.21.89s2.55-.23 3.21-.89c.16-.16.42-.16.57 0 .17.15.17.41.02.56zm-.4-2.62a1.54 1.54 0 110-3.08c.85 0 1.54.69 1.54 1.55 0 .84-.69 1.53-1.54 1.53z"/></svg>`;
+
+let _activeVenue = null;
+
+async function openDetail(id) {
+  const v = VENUES.find(x => x.id === id);
+  if (!v) return;
+  _activeVenue = v;
+  // Try to upgrade to precise Google Places coords up front
+  const placeData = await resolveVenue(v);
+  if (placeData) {
+    v.lat = placeData.lat;        // permanently override for this session
+    v.lng = placeData.lng;
+    v.placeId = placeData.placeId;
+    v.googlePhotos = placeData.photos;
+  }
+  const now = new Date();
+  const score = venueScore(v, now);
+  const color = scoreColor(score);
+  const lab = scoreLabel(score);
+  const vibe = scoreVibeText(v, score);
+  const img = venueImage(v.id);
+  const links = {
+    snap: `https://map.snapchat.com/@${v.lat},${v.lng},17.00z`,
+    insta: `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(v.name + ' Prague')}`,
+    tiktok: `https://www.tiktok.com/search?q=${encodeURIComponent(v.name + ' Prague')}`,
+    reddit: `https://www.reddit.com/search/?q=${encodeURIComponent(v.name + ' Prague')}`,
+  };
+
+  document.getElementById('detailHeader').innerHTML = `
+    <div class="score-pill" style="color:${color}">${score}</div>
+    <div class="titles">
+      <div class="darea">${v.area}</div>
+      <h2>${v.name}</h2>
+      <div class="vibe-text" style="color:${color}"><b>${lab}</b> · <span style="color:#fff;opacity:0.85">${vibe.replace(/^\s*[—-]\s*/,'')}</span></div>
+    </div>
+  `;
+
+  // Street View is now the fullscreen background. Panel just shows photos + info.
+  document.getElementById('detailBody').dataset.venueId = v.id;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="ddesc">${v.desc}</div>
+    ${KEYS.cseCx ? `
+    <div class="feed-label">📡 Recent <span class="freshness">past week</span></div>
+    <div class="feed" id="recentFeed">
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div>
+    </div>` : ''}
+    <div class="feed-label">⭐ Curated</div>
+    <div class="feed" id="feedFeed">
+      ${img ? `<img src="${img}" onclick="window.open('${img}','_blank')">` : ''}
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div><div class="feed-loading"></div>
+      <div class="feed-loading"></div>
+    </div>
+  `;
+
+  // Add side-floating social icons (only one set, attached to #detail)
+  let sideEl = document.getElementById('detailSideActions');
+  if (!sideEl) {
+    sideEl = document.createElement('div');
+    sideEl.id = 'detailSideActions';
+    sideEl.className = 'side-actions';
+    document.getElementById('detail').appendChild(sideEl);
+  }
+  sideEl.innerHTML = `
+    <a class="snap" href="${links.snap}" target="_blank" title="Snap Map">${SVG_SNAP}</a>
+    <a class="insta" href="${links.insta}" target="_blank" title="Instagram">${SVG_INSTA}</a>
+    <a class="tiktok" href="${links.tiktok}" target="_blank" title="TikTok">${SVG_TIKTOK}</a>
+    <a class="reddit" href="${links.reddit}" target="_blank" title="Reddit">${SVG_REDDIT}</a>
+  `;
+
+  // Hide whichever browse view is active and bring up Street View as the main view.
+  // This is what "see the bar" actually means — Google's photo of the storefront.
+  const cesiumEl = document.getElementById('cesiumContainer');
+  const toonEl   = document.getElementById('toonContainer');
+  const mapEl    = document.getElementById('map');
+  const svMainEl = document.getElementById('svMainContainer');
+  // Keep Cesium VISIBLE under SV — opaque SV occludes it, but camera is
+  // already framing the bar. When SV fades, you see the bar already centered.
+  if (cesiumViewer && !toonMode && _activeVenue) {
+    const v = _activeVenue;
+    cesiumViewer.scene.camera.cancelFlight();
+    cesiumViewer.scene.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(v.lng, v.lat, 280),
+      orientation: {
+        heading: Cesium.Math.toRadians(0),
+        pitch: Cesium.Math.toRadians(-75),
+        roll: 0,
+      },
+    });
+    cesiumEl.style.display = 'block';
+    cesiumViewer.resize();
+  } else {
+    cesiumEl.style.display = 'none';
+  }
+  toonEl.style.display = toonMode ? 'block' : 'none';
+  mapEl.style.display = 'none';
+  svMainEl.style.display = 'block';
+  // Reset any prior exit transform
+  svMainEl.classList.remove('exiting');
+  svMainEl.style.opacity = '';
+  svMainEl.style.transform = '';
+  document.body.classList.add('sv-main');
+  // Render the interactive Street View into the fullscreen container
+  if (KEYS.google) renderInteractiveStreetView(svMainEl, v);
+  // Apply night filter on the SV container if it's currently dark out — Google's
+  // photos are daytime; this fakes a nocturnal mood. NOT a real night photo.
+  const hr = new Date().getHours();
+  if (hr >= 19 || hr < 6) {
+    svMainEl.style.filter = 'brightness(0.55) saturate(0.7) contrast(1.1) hue-rotate(-15deg)';
+  } else if (hr === 18 || hr === 6) {
+    svMainEl.style.filter = 'brightness(0.78) sepia(0.18) hue-rotate(-8deg)';
+  } else {
+    svMainEl.style.filter = '';
+  }
+  // Hide camera controls — they don't apply to Street View
+  const cc = document.getElementById('cameraControls');
+  if (cc) cc.style.display = 'none';
+  // Show + auto-fade the scroll-out hint
+  const hint = document.getElementById('svScrollHint');
+  if (hint) {
+    hint.classList.add('show');
+    setTimeout(() => hint.classList.remove('show'), 3200);
+  }
+  // Arm the scroll-out detector
+  attachScrollExit();
+  // Pre-fetch the cinematic Aerial View video in the background.
+  // Stored on the venue so the exit transition can play it instantly.
+  v._aerialPromise = getAerialVideo(v);
+
+  // Open detail panel in peek state
+  const dEl = document.getElementById('detail');
+  dEl.classList.add('show', 'peek');
+  document.body.classList.remove('detail-open');
+  document.body.classList.add('detail-peek');
+
+  // Camera is already pre-positioned over the bar (above) — no extra fly needed.
+  // It's hidden under SV until the user scrolls out.
+
+  function expandPanel() {
+    dEl.classList.remove('peek');
+    document.body.classList.remove('detail-peek');
+    document.body.classList.add('detail-open');
+  }
+  function collapsePanel() {
+    dEl.classList.add('peek');
+    document.body.classList.add('detail-peek');
+    document.body.classList.remove('detail-open');
+  }
+  dEl.querySelector('.grabber').onclick = () => dEl.classList.contains('peek') ? expandPanel() : collapsePanel();
+  dEl.querySelector('.header').onclick = () => dEl.classList.contains('peek') ? expandPanel() : null;
+  dEl.querySelector('.expand-bar').onclick = expandPanel;
+  // Recent images via Google Custom Search Image API.
+  // Progressively widen: past week → past month → past year → any time.
+  if (KEYS.cseCx && KEYS.google) {
+    (async () => {
+      const ranges = [
+        { code: 'w1', label: 'past week' },
+        { code: 'm1', label: 'past month' },
+        { code: 'y1', label: 'past year' },
+        { code: null, label: 'any time' },
+      ];
+      let imgs = [];
+      let usedRange = ranges[0];
+      for (const r of ranges) {
+        imgs = await fetchRecentImages(v, r.code);
+        if (imgs.length) { usedRange = r; break; }
+      }
+      const feed = document.getElementById('recentFeed');
+      const body = document.getElementById('detailBody');
+      if (!feed || !body || body.dataset.venueId !== v.id) return;
+      // Update the freshness badge to reflect what we actually found
+      const badge = body.parentNode.querySelector('.feed-label .freshness');
+      if (badge) badge.textContent = usedRange.label;
+      if (!imgs.length) {
+        const diag = (window._cseLastStatus || 'unknown').replace(/</g,'&lt;');
+        feed.innerHTML = `<div style="grid-column:1/-1;font-size:11px;opacity:0.85;padding:14px;background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.3);border-radius:8px;line-height:1.5">
+          <b style="color:#FFB85C">No web photos found.</b><br>
+          <span style="opacity:0.85;display:block;margin-top:6px;font-family:ui-monospace,monospace;font-size:10px;word-break:break-word">${diag}</span>
+        </div>`;
+        return;
+      }
+      feed.innerHTML = imgs.slice(0, 10).map(i => `
+        <div class="feed-tile">
+          <img src="${i.thumb}" loading="lazy" onclick="window.open('${i.context.replace(/'/g,'')}','_blank')" alt="${(i.title||'').replace(/"/g,'&quot;')}">
+          <div class="feed-source">${i.source.replace(/^www\./,'').replace(/</g,'&lt;')}</div>
+        </div>
+      `).join('');
+    })();
+  }
+
+  // Photos: prefer Google Places (curated) → Foursquare → fallback. Grid uses
+  // smaller thumbs; click opens the full-resolution version.
+  if (v.googlePhotos && v.googlePhotos.length) {
+    const photos = v.googlePhotos.slice(0, 20).map(name => ({
+      thumb: `https://places.googleapis.com/v1/${name}/media?maxWidthPx=320&key=${KEYS.google}`,
+      full:  `https://places.googleapis.com/v1/${name}/media?maxWidthPx=1600&key=${KEYS.google}`,
+    }));
+    showPhotoGallery(photos, v.id);
+  } else if (KEYS.fsq) {
+    fetchFoursquarePhotos(v);
+  }
+  if (KEYS.besttime) fetchBestTimeBusy(v);
+}
+
+// ============ FOURSQUARE PHOTOS ============
+// Supports both legacy keys (sent raw) and new fsq3_ Service API keys (Bearer + new host)
+async function fetchFoursquarePhotos(v) {
+  const isNewKey = /^fsq3/i.test(KEYS.fsq);
+  const base = isNewKey ? 'https://places-api.foursquare.com' : 'https://api.foursquare.com/v3';
+  const headers = isNewKey
+    ? { Authorization: `Bearer ${KEYS.fsq}`, 'X-Places-Api-Version': '2025-06-17', Accept: 'application/json' }
+    : { Authorization: KEYS.fsq, Accept: 'application/json' };
+  try {
+    const searchUrl = `${base}/places/search?ll=${v.lat},${v.lng}&query=${encodeURIComponent(v.name)}&limit=1`;
+    const sr = await fetch(searchUrl, { headers });
+    if (!sr.ok) { console.warn('FSQ search failed', sr.status, await sr.text()); return; }
+    const sj = await sr.json();
+    if (!sj.results || !sj.results.length) return;
+    const fsqId = sj.results[0].fsq_place_id || sj.results[0].fsq_id;
+    if (!fsqId) return;
+    const pr = await fetch(`${base}/places/${fsqId}/photos?limit=12`, { headers });
+    if (!pr.ok) { console.warn('FSQ photos failed', pr.status, await pr.text()); return; }
+    const pj = await pr.json();
+    if (!Array.isArray(pj) || !pj.length) return;
+    const photos = pj.map(p => ({
+      thumb: `${p.prefix}480x480${p.suffix}`,
+      full:  `${p.prefix}1080x720${p.suffix}`,
+    }));
+    showPhotoGallery(photos, v.id);
+  } catch (e) { console.warn('FSQ photos error', e); }
+}
+
+function showPhotoGallery(photos, venueId) {
+  const body = document.getElementById('detailBody');
+  if (body.dataset.venueId !== venueId) return;
+  const feed = document.getElementById('feedFeed');
+  if (!feed) return;
+  // Accept either array of strings (legacy) or array of {thumb, full}
+  feed.innerHTML = photos.map(p => {
+    const thumb = typeof p === 'string' ? p : p.thumb;
+    const full  = typeof p === 'string' ? p : p.full;
+    return `<img src="${thumb}" loading="lazy" onclick="window.open('${full}','_blank')">`;
+  }).join('');
+}
+
+// ============ BESTTIME LIVE BUSY ============
+async function fetchBestTimeBusy(v) {
+  try {
+    const url = `https://besttime.app/api/v1/forecasts/live?api_key_public=${KEYS.besttime}&venue_name=${encodeURIComponent(v.name)}&venue_address=${encodeURIComponent(v.area + ', Prague')}`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j && j.analysis && typeof j.analysis.venue_live_busyness === 'number') {
+      const realBusy = j.analysis.venue_live_busyness;
+      const realColor = scoreColor(realBusy);
+      const scorePill = document.querySelector('#detail .score-pill');
+      const vibeText = document.querySelector('#detail .vibe-text');
+      if (scorePill) {
+        scorePill.textContent = realBusy;
+        scorePill.style.color = realColor;
+      }
+      if (vibeText) {
+        vibeText.innerHTML = `<b>${scoreLabel(realBusy)} · LIVE</b> · <span style="color:#fff;opacity:0.85">${scoreVibeText(v, realBusy).replace(/^\s*[—-]\s*/,'')}</span>`;
+        vibeText.style.color = realColor;
+      }
+    }
+  } catch (e) { console.warn('BestTime failed', e); }
+}
+// =====================================================================
+// Progressive scroll-out exit. Each wheel event advances "exit progress"
+// from 0 (Street View) to 1 (Cesium overview). User controls the pace —
+// the camera smoothly interpolates altitude as they scroll. No yeet.
+// =====================================================================
+let _scrollExitHandler = null;
+let _exitProgress = 0;
+let _exitTargetProgress = 0;
+let _exitAnimFrame = null;
+const EXIT_TOTAL_DELTA = 2400; // total wheel deltaY required for full exit
+
+// SV stays fully opaque the whole time — no progressive ghost overlay.
+// Threshold-trigger only: when sustained scroll-out is detected, fire the
+// blackout wipe (or Aerial View if pre-rendered).
+let _exitInProgress = false;
+
+async function attemptAerialOrBlackout() {
+  const v = _activeVenue;
+  // Only use Aerial View if it's ALREADY resolved (don't wait)
+  let url = null;
+  if (v && v._aerialPromise) {
+    // Use Promise.race with a 0ms timeout to check if already resolved
+    url = await Promise.race([
+      v._aerialPromise,
+      new Promise(res => setTimeout(() => res(null), 50)),
+    ]);
+  }
+  if (url) return playAerialAndClose(url);
+  blackoutWipeAndClose();
+}
+
+function blackoutWipeAndClose() {
+  const blackout = document.getElementById('blackoutOverlay');
+  const sv = document.getElementById('svMainContainer');
+  if (blackout) blackout.classList.add('show');
+  // After blackout is opaque, swap views and start fade-out
+  setTimeout(() => {
+    if (sv) { sv.style.display = 'none'; sv.innerHTML = ''; }
+    closeDetail();
+    // Hold black for a beat so Cesium can render its first frame, then fade out
+    setTimeout(() => {
+      if (blackout) blackout.classList.remove('show');
+    }, 250);
+  }, 470);
+}
+
+async function playAerialAndClose(url) {
+  const video = document.getElementById('aerialVideo');
+  const sv = document.getElementById('svMainContainer');
+  if (!video) return blackoutWipeAndClose();
+  video.src = url;
+  video.style.display = 'block';
+  video.style.opacity = '0';
+  video.style.transition = 'opacity 0.6s ease';
+  requestAnimationFrame(() => { video.style.opacity = '1'; });
+  try { await video.play(); } catch (_) {}
+  setTimeout(() => { if (sv) { sv.style.display = 'none'; sv.innerHTML = ''; } }, 700);
+  const onEnd = () => {
+    video.removeEventListener('ended', onEnd);
+    video.style.opacity = '0';
+    setTimeout(() => {
+      video.style.display = 'none';
+      video.removeAttribute('src');
+      video.load();
+      closeDetail();
+    }, 850);
+  };
+  video.addEventListener('ended', onEnd);
+}
+
+
+// Side button or programmatic exit
+function nudgeExit() {
+  if (_exitInProgress) return;
+  _exitInProgress = true;
+  attemptAerialOrBlackout();
+  setTimeout(() => { _exitInProgress = false; }, 2500);
+}
+
+let _scrollOutAccum = 0;
+let _scrollOutResetTimer = null;
+const EXIT_DELTA_THRESHOLD = 1400; // need a deliberate scroll-out, not a light trackpad tap
+
+function attachScrollExit() {
+  if (_scrollExitHandler) return;
+  _scrollOutAccum = 0;
+  _scrollExitHandler = (e) => {
+    if (!document.body.classList.contains('sv-main')) return;
+    if (_exitInProgress) return;
+    // Ignore wheel events that originated INSIDE the detail panel — that's
+    // the user scrolling through photos, not trying to exit.
+    const detail = document.getElementById('detail');
+    if (detail && e.target && detail.contains(e.target)) return;
+    // Tiny deltas (light trackpad taps, accidental moves) should not count
+    if (Math.abs(e.deltaY) < 8) return;
+    if (e.deltaY > 0) {
+      _scrollOutAccum += e.deltaY;
+      clearTimeout(_scrollOutResetTimer);
+      _scrollOutResetTimer = setTimeout(() => { _scrollOutAccum = 0; }, 600);
+      if (_scrollOutAccum >= EXIT_DELTA_THRESHOLD) {
+        _scrollOutAccum = 0;
+        nudgeExit();
+      }
+    } else if (e.deltaY < 0) {
+      _scrollOutAccum = Math.max(0, _scrollOutAccum - 300);
+    }
+  };
+  document.addEventListener('wheel', _scrollExitHandler, { capture: true, passive: true });
+}
+
+function detachScrollExit() {
+  if (_scrollExitHandler) {
+    document.removeEventListener('wheel', _scrollExitHandler, { capture: true });
+    _scrollExitHandler = null;
+  }
+  _scrollOutAccum = 0;
+  clearTimeout(_scrollOutResetTimer);
+}
+
+function closeDetail() {
+  const d = document.getElementById('detail');
+  d.classList.remove('show', 'peek');
+  document.body.classList.remove('detail-open', 'detail-peek', 'sv-main');
+
+  const svMain = document.getElementById('svMainContainer');
+  // Cesium is already visible under SV (set up in openDetail); just resize
+  if (cesiumViewer && !toonMode) {
+    cesiumViewer.resize();
+    setTimeout(() => cesiumViewer.resize(), 380);
+  }
+  if (toonMode) {
+    document.getElementById('toonContainer').style.display = 'block';
+    if (toonMap) setTimeout(() => toonMap.resize(), 50);
+  } else if (!cesiumViewer) {
+    document.getElementById('map').style.display = 'block';
+  }
+  // Restore camera controls
+  const cc = document.getElementById('cameraControls');
+  if (cc) cc.style.display = '';
+  // Hide hint + disarm the scroll-out detector
+  const hint = document.getElementById('svScrollHint');
+  if (hint) hint.classList.remove('show');
+  detachScrollExit();
+
+  // Cross-fade Street View out (4s) overlapping with Cesium's slow climb
+  svMain.classList.add('exiting');
+  setTimeout(() => {
+    svMain.style.display = 'none';
+    svMain.classList.remove('exiting');
+    svMain.innerHTML = ''; // tear down the panorama instance to free memory
+  }, 4100);
+
+  // Cinematic climb — 6 seconds, quintic ease for buttery start and finish.
+  if (cesiumViewer && !toonMode && _activeVenue) {
+    const v = _activeVenue;
+    cesiumViewer.scene.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(v.lng, v.lat, 750),
+      orientation: {
+        heading: Cesium.Math.toRadians(0),
+        pitch: Cesium.Math.toRadians(-58),
+        roll: 0,
+      },
+      duration: 6.0,
+      easingFunction: Cesium.EasingFunction.QUINTIC_IN_OUT,
+    });
+  }
+
+  _activeVenue = null;
+  clearCharacters();
+  clearToonCharacters();
+}
+
+// ============ Filters ============
+document.querySelectorAll('.chip').forEach(c => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    activeFilter = c.dataset.filter;
+    renderVenueList();
+  });
+});
+
+// ============ Clock ============
+function tick() {
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+tick();
+setInterval(tick, 30 * 1000);
+setInterval(refreshHeat, 2 * 60 * 1000);
+
+// ============ Camera controls (Cesium + MapLibre) ============
+function zoomCamera(factor) {
+  if (cesiumViewer) {
+    const cam = cesiumViewer.scene.camera;
+    const height = cesiumViewer.scene.globe.ellipsoid.cartesianToCartographic(cam.position).height;
+    cam.zoomIn(height * factor);
+  } else if (map) {
+    map.zoomTo(map.getZoom() + (factor < 0 ? 1 : -1));
+  }
+}
+function tiltCamera(deltaDeg) {
+  if (cesiumViewer) {
+    const cam = cesiumViewer.scene.camera;
+    const newPitch = Math.max(-Math.PI/2 + 0.05, Math.min(-0.05, cam.pitch + Cesium.Math.toRadians(deltaDeg)));
+    cam.setView({
+      destination: cam.position,
+      orientation: { heading: cam.heading, pitch: newPitch, roll: 0 }
+    });
+  } else if (map) {
+    map.setPitch(Math.max(0, Math.min(80, map.getPitch() + deltaDeg)));
+  }
+}
+function resetView() {
+  if (cesiumViewer) {
+    cesiumViewer.scene.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(14.4205, 50.0845, 1800),
+      orientation: {
+        heading: Cesium.Math.toRadians(-20),
+        pitch: Cesium.Math.toRadians(-55),
+        roll: 0,
+      },
+      duration: 1.2,
+    });
+  } else if (map) {
+    map.flyTo({ center: [14.4205, 50.0845], zoom: 14, pitch: 45, bearing: -20, duration: 800 });
+  }
+}
+function rotateCamera(deltaDeg) {
+  if (cesiumViewer) {
+    const cam = cesiumViewer.scene.camera;
+    // Rotate around the look target (orbit). Use lookAtTransform-free approach:
+    // compute current focal point on the ellipsoid, then rotate camera around it.
+    const ray = cam.getPickRay(new Cesium.Cartesian2(
+      cesiumViewer.scene.canvas.clientWidth / 2,
+      cesiumViewer.scene.canvas.clientHeight / 2
+    ));
+    const focal = cesiumViewer.scene.globe.pick(ray, cesiumViewer.scene) ||
+                  Cesium.Cartesian3.fromDegrees(14.4205, 50.0855, 0);
+    const transform = Cesium.Transforms.eastNorthUpToFixedFrame(focal);
+    cam.lookAtTransform(transform);
+    cam.rotateRight(Cesium.Math.toRadians(deltaDeg));
+    cam.lookAtTransform(Cesium.Matrix4.IDENTITY); // release the lock
+  } else if (map) {
+    map.setBearing(map.getBearing() + deltaDeg);
+  }
+}
+
+// Side button: minus exits Street View. Plus removed (no progressive zoom now).
+{
+  const zo = document.getElementById('svZoomOut');
+  if (zo) zo.onclick = () => nudgeExit();
+  const zi = document.getElementById('svZoomIn');
+  if (zi) zi.style.display = 'none';
+}
+
+document.getElementById('zoomIn').onclick   = () => zoomCamera(0.35);
+document.getElementById('zoomOut').onclick  = () => zoomCamera(-0.55);
+document.getElementById('tiltUp').onclick   = () => tiltCamera(10);
+document.getElementById('tiltDown').onclick = () => tiltCamera(-10);
+document.getElementById('rotLeft').onclick  = () => rotateCamera(-22);
+document.getElementById('rotRight').onclick = () => rotateCamera(22);
+document.getElementById('resetView').onclick = resetView;
+
+// =====================================================================
+// TOON MODE — low-poly stylized 3D buildings via MapLibre + OSM data.
+// When zoomed close, photogrammetric tiles get mushy. Toon mode swaps
+// to flat-shaded extruded buildings sourced from OpenStreetMap.
+// =====================================================================
+let toonMap = null;
+let toonMode = false;
+let toonMarkers = [];
+
+function buildToonStyle() {
+  // Time-of-day awareness. Real local hour drives the entire palette.
+  const h = new Date().getHours();
+  const isNight = (h >= 19 || h < 6);
+  const isDusk  = (h === 18 || h === 6 || h === 7);
+
+  const src = { omt: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } };
+
+  if (isNight) {
+    return {
+      version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources: src,
+      layers: [
+        { id: 'sky', type: 'background',
+          paint: { 'background-color': '#06101e' } },
+        // Subtle stippled noise under everything for warmth
+        { id: 'land', type: 'fill', source: 'omt', 'source-layer': 'landcover',
+          paint: { 'fill-color': '#11142a', 'fill-opacity': 0.6 } },
+        { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water',
+          paint: { 'fill-color': '#08182a', 'fill-opacity': 0.92 } },
+        // Reflection highlight on water
+        { id: 'water-shimmer', type: 'fill', source: 'omt', 'source-layer': 'water',
+          paint: { 'fill-color': '#3a5a90', 'fill-opacity': 0.12 } },
+        { id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park',
+          paint: { 'fill-color': '#0d2018', 'fill-opacity': 0.85 } },
+        // Streetlight bloom (very wide, soft)
+        { id: 'road-glow-outer', type: 'line', source: 'omt', 'source-layer': 'transportation',
+          paint: {
+            'line-color': '#ffae5e',
+            'line-blur': 18,
+            'line-opacity': 0.20,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 12, 8, 18, 36],
+          } },
+        // Streetlight inner halo
+        { id: 'road-glow', type: 'line', source: 'omt', 'source-layer': 'transportation',
+          paint: {
+            'line-color': '#ffce8a',
+            'line-blur': 7,
+            'line-opacity': 0.42,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 18, 18],
+          } },
+        // Road surface — dark warm tarmac
+        { id: 'roads', type: 'line', source: 'omt', 'source-layer': 'transportation',
+          paint: {
+            'line-color': '#3a2818',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 18, 5],
+          } },
+        // Buildings — dark navy with warm street-level wash
+        { id: 'buildings-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building',
+          minzoom: 14,
+          paint: {
+            'fill-extrusion-color': [
+              'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
+              0,  '#3a2418',
+              4,  '#2a2032',
+              10, '#241d35',
+              25, '#1a162d',
+              60, '#0e0c1c',
+            ],
+            'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
+            'fill-extrusion-base':   ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+            'fill-extrusion-opacity': 0.95,
+            'fill-extrusion-vertical-gradient': true,
+          } },
+        // Lit-window layer — warm yellow on lower floors, varies by building height
+        { id: 'building-windows', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building',
+          minzoom: 15,
+          filter: ['<', ['coalesce', ['get', 'render_height'], 8], 30],
+          paint: {
+            'fill-extrusion-color': [
+              'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 8],
+              5,  '#ffd680',  // smaller buildings = warmer (homes, cafes)
+              15, '#ffb35e',
+              30, '#a07a4a',
+            ],
+            'fill-extrusion-height': ['*', 0.62, ['coalesce', ['get', 'render_height'], 8]],
+            'fill-extrusion-base':   ['*', 0.22, ['coalesce', ['get', 'render_height'], 8]],
+            'fill-extrusion-opacity': 0.22,
+          } },
+        // Outline buildings with a thin black stroke at high zoom — Sims sketchbook feel
+        { id: 'building-outline', type: 'line', source: 'omt', 'source-layer': 'building',
+          minzoom: 16,
+          paint: {
+            'line-color': '#000000',
+            'line-width': 0.7,
+            'line-opacity': 0.55,
+          } },
+      ],
+      sky: { 'sky-color': '#06101e' },
+      light: { anchor: 'map', color: '#7088c8', intensity: 0.18, position: [1.5, 270, 60] },
+    };
+  }
+
+  // Daytime palette (or dusk shifts toward orange)
+  const skyColor = isDusk ? '#f8b878' : '#cfe9ff';
+  const buildingTop = isDusk ? '#5a3a44' : '#6b3a2a';
+  const buildingMid = isDusk ? '#c98a72' : '#cf8866';
+  const buildingBase = isDusk ? '#f7d2a8' : '#f4d6b8';
+  return {
+    version: 8,
+    sources: src,
+    layers: [
+      { id: 'sky', type: 'background', paint: { 'background-color': skyColor } },
+      { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water',
+        paint: { 'fill-color': isDusk ? '#7d8fb0' : '#7ec0ff' } },
+      { id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park',
+        paint: { 'fill-color': isDusk ? '#a0b88c' : '#bfe6a4' } },
+      { id: 'roads', type: 'line', source: 'omt', 'source-layer': 'transportation',
+        paint: { 'line-color': '#fff8e7', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 18, 5] } },
+      { id: 'road-edges', type: 'line', source: 'omt', 'source-layer': 'transportation',
+        paint: { 'line-color': '#caa776',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 2],
+          'line-gap-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 18, 5] } },
+      { id: 'buildings-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building',
+        minzoom: 14,
+        paint: {
+          'fill-extrusion-color': [
+            'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
+            0, buildingBase, 10, '#e8b08a', 20, buildingMid, 40, '#9c5a44', 80, buildingTop,
+          ],
+          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
+          'fill-extrusion-base':   ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+          'fill-extrusion-opacity': 0.94,
+          'fill-extrusion-vertical-gradient': true,
+        } },
+      // Sketchbook outline on each building — Sims-y at high zoom
+      { id: 'building-outline', type: 'line', source: 'omt', 'source-layer': 'building',
+        minzoom: 16,
+        paint: {
+          'line-color': isDusk ? '#3a2515' : '#7a4628',
+          'line-width': 0.8,
+          'line-opacity': 0.5,
+        } },
+    ],
+    sky: { 'sky-color': skyColor },
+    light: { anchor: 'viewport', color: 'white', intensity: 0.55, position: [1.5, 90, 80] },
+  };
+}
+
+function initToon() {
+  if (toonMap) return;
+  toonMap = new maplibregl.Map({
+    container: 'toonContainer',
+    style: buildToonStyle(),
+    center: [14.4205, 50.0855],
+    zoom: 16,
+    pitch: 55,
+    bearing: -20,
+    antialias: true,
+  });
+  toonMap.on('load', () => addToonMarkers());
+  toonMap.on('styledata', () => addToonMarkers());
+}
+
+function addToonMarkers() {
+  toonMarkers.forEach(m => m.remove());
+  toonMarkers = [];
+  const h = new Date().getHours();
+  const isNight = (h >= 19 || h < 6);
+  for (const v of VENUES) {
+    const score = venueScore(v, new Date());
+    const color = scoreColor(score);
+    const el = document.createElement('div');
+    const glow = isNight
+      ? `0 0 14px ${color}, 0 0 28px ${color}88, 0 4px 16px rgba(0,0,0,0.6)`
+      : `0 4px 14px rgba(0,0,0,0.45)`;
+    el.style.cssText = `width:32px;height:32px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:${glow};cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#1a1a1a;font-family:ui-monospace,monospace;font-weight:800`;
+    el.textContent = score;
+    el.title = v.name;
+    el.onclick = () => openDetail(v.id);
+    const m = new maplibregl.Marker({ element: el })
+      .setLngLat([v.lng, v.lat])
+      .addTo(toonMap);
+    toonMarkers.push(m);
+  }
+}
+
+function syncCameraCesiumToToon() {
+  if (!cesiumViewer) return;
+  const cam = cesiumViewer.scene.camera;
+  const carto = Cesium.Cartographic.fromCartesian(cam.position);
+  const lng = Cesium.Math.toDegrees(carto.longitude);
+  const lat = Cesium.Math.toDegrees(carto.latitude);
+  const height = carto.height;
+  // Rough mapping from camera height → MapLibre zoom
+  const zoom = Math.max(13, Math.min(19, 23 - Math.log2(Math.max(20, height)) * 1.05));
+  const pitch = Math.min(70, Math.max(0, -Cesium.Math.toDegrees(cam.pitch)));
+  const bearing = Cesium.Math.toDegrees(cam.heading);
+  if (toonMap) {
+    toonMap.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
+  }
+}
+function syncCameraToonToCesium() {
+  if (!cesiumViewer || !toonMap) return;
+  const c = toonMap.getCenter();
+  const z = toonMap.getZoom();
+  const pitch = toonMap.getPitch();
+  const bearing = toonMap.getBearing();
+  // Inverse of zoom→height
+  const height = Math.pow(2, 23 - z) / 1.05;
+  cesiumViewer.scene.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(c.lng, c.lat, height),
+    orientation: {
+      heading: Cesium.Math.toRadians(bearing),
+      pitch: Cesium.Math.toRadians(-pitch),
+      roll: 0,
+    },
+  });
+}
+
+// =====================================================================
+// 2D character markers for Toon mode — small round person-from-above
+// dots that wander around the focused venue.
+// =====================================================================
+const _toonCharMarkers = [];
+let _toonCharTimer = null;
+
+function clearToonCharacters() {
+  for (const m of _toonCharMarkers) m.remove();
+  _toonCharMarkers.length = 0;
+  if (_toonCharTimer) { clearInterval(_toonCharTimer); _toonCharTimer = null; }
+}
+
+function spawnToonCharacters(v) {
+  if (!toonMap) return;
+  clearToonCharacters();
+  const score = venueScore(v, new Date());
+  const count = Math.max(5, Math.min(22, Math.round(score / 4.5)));
+  const lat0 = v.lat * Math.PI / 180;
+  const chars = [];
+  for (let i = 0; i < count; i++) {
+    const isQueuer = i < count * 0.6;
+    const radius = isQueuer ? (3 + Math.random() * 7) : (14 + Math.random() * 16);
+    const angle = Math.random() * 2 * Math.PI;
+    const lat = v.lat + (radius * Math.cos(angle)) / 111320;
+    const lng = v.lng + (radius * Math.sin(angle)) / (111320 * Math.cos(lat0));
+    const color = CHAR_COLORS[Math.floor(Math.random() * CHAR_COLORS.length)];
+    const el = document.createElement('div');
+    // Top-down sims-style person: torso ring + head dot
+    el.style.cssText = `
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: ${color};
+      border: 2px solid rgba(0,0,0,0.6);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.4), inset 0 -2px 3px rgba(0,0,0,0.25);
+      position: relative;
+    `;
+    const head = document.createElement('div');
+    head.style.cssText = `
+      position: absolute; top: 50%; left: 50%;
+      width: 7px; height: 7px;
+      background: #d6a574;
+      border: 1px solid rgba(0,0,0,0.5);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    `;
+    el.appendChild(head);
+    const m = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([lng, lat])
+      .addTo(toonMap);
+    _toonCharMarkers.push(m);
+    chars.push({ marker: m, lat, lng, baseLat: v.lat, baseLng: v.lng, isQueuer, t: Math.random() * Math.PI * 2 });
+  }
+  // Animate: tick every 120ms, drift each character along a slow random walk
+  _toonCharTimer = setInterval(() => {
+    for (const c of chars) {
+      c.t += 0.06 + Math.random() * 0.04;
+      const stepDist = c.isQueuer ? 0.6 : 1.4; // meters per tick
+      const stepLat = (stepDist * Math.cos(c.t)) / 111320;
+      const stepLng = (stepDist * Math.sin(c.t)) / (111320 * Math.cos(c.baseLat * Math.PI / 180));
+      c.lat += stepLat;
+      c.lng += stepLng;
+      // Soft tether — pull back toward venue if drifting too far
+      const dN = (c.lat - c.baseLat) * 111320;
+      const dE = (c.lng - c.baseLng) * 111320 * Math.cos(c.baseLat * Math.PI / 180);
+      const dist = Math.sqrt(dN*dN + dE*dE);
+      const maxDist = c.isQueuer ? 12 : 35;
+      if (dist > maxDist) {
+        c.t += Math.PI; // turn around
+      }
+      c.marker.setLngLat([c.lng, c.lat]);
+    }
+  }, 120);
+}
+
+function toggleToon() {
+  toonMode = !toonMode;
+  const cesiumEl = document.getElementById('cesiumContainer');
+  const mapEl    = document.getElementById('map');
+  const toonEl   = document.getElementById('toonContainer');
+  const btn      = document.getElementById('toonMode');
+  if (toonMode) {
+    if (!toonMap) initToon();
+    syncCameraCesiumToToon();
+    cesiumEl.style.display = 'none';
+    mapEl.style.display = 'none';
+    toonEl.style.display = 'block';
+    if (toonMap) setTimeout(() => toonMap.resize(), 50);
+    btn.textContent = '🏙️';
+    btn.title = 'Back to photoreal';
+  } else {
+    syncCameraToonToCesium();
+    toonEl.style.display = 'none';
+    if (cesiumViewer) {
+      cesiumEl.style.display = 'block';
+      cesiumViewer.resize();
+    } else {
+      mapEl.style.display = 'block';
+    }
+    btn.textContent = '🎨';
+    btn.title = 'Toggle Toon mode';
+  }
+}
+document.getElementById('toonMode').onclick = toggleToon;
+</script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a1f">
+<title>Prague Scout — API Setup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: linear-gradient(180deg, #0a0a1a 0%, #14141d 100%);
+    color: #f5f5f7;
+    padding: 30px 16px 60px;
+    min-height: 100vh;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  .hero {
+    text-align: center;
+    padding: 30px 20px;
+    background: linear-gradient(135deg, rgba(255,213,79,0.12), rgba(25,118,210,0.08));
+    border-radius: 18px;
+    margin-bottom: 26px;
+    border: 1px solid rgba(255,213,79,0.3);
+  }
+  h1 {
+    font-size: 32px;
+    color: #FFD54F;
+    text-shadow: 0 0 24px rgba(255,213,79,0.4);
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .sub { font-size: 15px; color: #f5f5f7; opacity: 0.85; }
+  .meta { font-size: 12px; opacity: 0.6; margin-top: 10px; }
+
+  .api {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 22px;
+    margin: 18px 0;
+    transition: border-color 0.2s;
+  }
+  .api.active { border-color: #00C853; box-shadow: 0 0 24px rgba(0,200,83,0.15); }
+  .api .row1 { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+  .api .num {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: linear-gradient(135deg, #FFD54F, #FF6B00);
+    color: #1a1a1a;
+    font-weight: bold; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .api.active .num { background: linear-gradient(135deg, #00C853, #00897B); color: white; }
+  .api .name { font-size: 22px; font-weight: bold; color: #fff; flex: 1; }
+  .api .priority {
+    font-size: 11px; padding: 4px 10px; border-radius: 10px;
+    font-weight: bold; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .api .priority.essential { background: #FF1744; color: white; }
+  .api .priority.high { background: #FF9800; color: #1a1a1a; }
+  .api .priority.nice { background: #00C853; color: white; }
+
+  .api .gives { font-size: 14px; opacity: 0.92; margin: 10px 0; }
+  .api .gives b { color: #FFD54F; }
+  .api .cost {
+    background: rgba(0,0,0,0.4);
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin: 10px 0;
+    font-size: 13px;
+  }
+  .api .cost b { color: #4CAF50; font-size: 14px; }
+
+  .steps { font-size: 13px; opacity: 0.95; margin: 10px 0; padding-left: 22px; }
+  .steps li { margin: 4px 0; }
+  .steps b { color: #FFD54F; }
+
+  .signup-btn {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #1976D2, #1565C0);
+    color: white;
+    text-decoration: none;
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(25,118,210,0.4);
+  }
+  .signup-btn:active { transform: scale(0.97); }
+
+  .key-input {
+    width: 100%;
+    padding: 12px 14px;
+    margin-top: 12px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .key-input:focus { outline: none; border-color: #FFD54F; }
+  .key-input.set { border-color: #00C853; background: rgba(0,200,83,0.08); }
+
+  .save-btn {
+    margin-top: 10px;
+    padding: 10px 18px;
+    background: #FFD54F;
+    color: #1a1a1a;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .save-btn:active { transform: scale(0.97); }
+  .save-btn.saved { background: #00C853; color: white; }
+
+  .clear-btn {
+    margin-top: 10px;
+    margin-left: 10px;
+    padding: 10px 14px;
+    background: rgba(229,57,53,0.2);
+    color: #FF8A80;
+    border: 1px solid rgba(229,57,53,0.4);
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .totals {
+    background: linear-gradient(135deg, rgba(76,175,80,0.15), rgba(27,94,32,0.05));
+    border: 2px solid #4CAF50;
+    border-radius: 14px;
+    padding: 22px;
+    margin: 28px 0;
+  }
+  .totals h2 { font-size: 18px; color: #A5D6A7; margin-bottom: 12px; }
+  .totals .total { font-size: 30px; font-weight: bold; color: #4CAF50; margin: 8px 0; }
+  .totals p { font-size: 14px; opacity: 0.9; }
+
+  .open-app {
+    display: block;
+    width: 100%;
+    margin: 30px 0;
+    padding: 18px;
+    background: linear-gradient(135deg, #FFD54F, #FF6B00);
+    color: #1a1a1a;
+    text-align: center;
+    text-decoration: none;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: bold;
+    box-shadow: 0 6px 20px rgba(255,213,79,0.4);
+  }
+
+  .footnote { font-size: 12px; opacity: 0.7; padding: 14px 0; line-height: 1.6; text-align: center; }
+
+  .badge { display: inline-block; padding: 2px 8px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 11px; font-weight: bold; margin-left: 6px; }
+  .badge.set { background: #00C853; color: white; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <h1>SCOUT · API SETUP</h1>
+    <div class="sub">Sign up for these. Paste keys here. App upgrades itself.</div>
+    <div class="meta">All keys stored only in your browser (localStorage). Never sent anywhere.</div>
+  </div>
+
+  <!-- ========== 1. GOOGLE MAPS PLATFORM ========== -->
+  <div class="api" id="api-google">
+    <div class="row1">
+      <div class="num">1</div>
+      <div class="name">Google Maps Platform <span class="badge" id="google-status">not set</span></div>
+      <div class="priority essential">★ Essential</div>
+    </div>
+    <div class="gives">
+      <b>What it unlocks:</b> The big one. Photorealistic 3D Tiles — actual <b>swoop-into-Notre-Dame visualization</b>, real buildings rendered from photos. Plus Places API for accurate venue data and live "popular times" baseline.
+    </div>
+    <div class="cost">
+      <b>$200/mo free credit</b> — covers ~28k 3D tile loads + plenty of Places calls. You won't pay anything for personal use unless you go viral.
+    </div>
+    <ol class="steps">
+      <li>Go to <b>console.cloud.google.com</b> → create a project</li>
+      <li>Enable APIs: <b>Map Tiles API</b> + <b>Places API (New)</b></li>
+      <li>Credentials → Create API Key → Copy</li>
+      <li>(Optional but smart) restrict the key to your domains in production</li>
+    </ol>
+    <a class="signup-btn" href="https://console.cloud.google.com/google/maps-apis/start" target="_blank">→ Sign up at Google Cloud Console</a>
+    <input type="password" class="key-input" id="key-google" placeholder="Paste Google Maps API key here">
+    <button class="save-btn" onclick="saveKey('google', 'GOOGLE_MAPS_KEY')">Save Key</button>
+    <button class="clear-btn" onclick="clearKey('google', 'GOOGLE_MAPS_KEY')">Clear</button>
+  </div>
+
+  <!-- ========== 2. BESTTIME (LIVE BUSY DATA) ========== -->
+  <div class="api" id="api-besttime">
+    <div class="row1">
+      <div class="num">2</div>
+      <div class="name">BestTime API <span class="badge" id="besttime-status">not set</span></div>
+      <div class="priority high">High Value</div>
+    </div>
+    <div class="gives">
+      <b>What it unlocks:</b> Real <b>"how busy right now"</b> data for every venue, scraped from Google Popular Times. Replaces our estimated heat scores with actual live aggregated phone density. This is the real magic for your scout.
+    </div>
+    <div class="cost">
+      <b>$5–25/mo Starter</b> for ~50–500 venues, $99/mo Pro tier. Free trial available. Cheap relative to what it does.
+    </div>
+    <ol class="steps">
+      <li>Sign up at <b>besttime.app</b></li>
+      <li>Choose Starter plan (or trial first)</li>
+      <li>Dashboard → API Keys → Copy</li>
+    </ol>
+    <a class="signup-btn" href="https://besttime.app/account/signup/" target="_blank">→ Sign up at BestTime</a>
+    <input type="password" class="key-input" id="key-besttime" placeholder="Paste BestTime API key here">
+    <button class="save-btn" onclick="saveKey('besttime', 'BESTTIME_KEY')">Save Key</button>
+    <button class="clear-btn" onclick="clearKey('besttime', 'BESTTIME_KEY')">Clear</button>
+  </div>
+
+  <!-- ========== 3. FOURSQUARE ========== -->
+  <div class="api" id="api-fsq">
+    <div class="row1">
+      <div class="num">3</div>
+      <div class="name">Foursquare Places API <span class="badge" id="fsq-status">not set</span></div>
+      <div class="priority high">High Value</div>
+    </div>
+    <div class="gives">
+      <b>What it unlocks:</b> <b>5–10 photos per venue</b> (not just one), tip/review snippets, hours, popularity score, and the venue's Foursquare check-in count.
+    </div>
+    <div class="cost">
+      <b>FREE up to ~50k requests/month</b> — covers a personal app for life. Pay-as-you-go after.
+    </div>
+    <ol class="steps">
+      <li>Sign up at <b>location.foursquare.com</b></li>
+      <li>Create a project → "Service Key"</li>
+      <li>Copy the key</li>
+    </ol>
+    <a class="signup-btn" href="https://location.foursquare.com/developer/" target="_blank">→ Sign up at Foursquare</a>
+    <input type="password" class="key-input" id="key-fsq" placeholder="Paste Foursquare Service Key here">
+    <button class="save-btn" onclick="saveKey('fsq', 'FSQ_KEY')">Save Key</button>
+    <button class="clear-btn" onclick="clearKey('fsq', 'FSQ_KEY')">Clear</button>
+  </div>
+
+  <!-- ========== 4. YELP ========== -->
+  <div class="api" id="api-yelp">
+    <div class="row1">
+      <div class="num">4</div>
+      <div class="name">Yelp Fusion API <span class="badge" id="yelp-status">not set</span></div>
+      <div class="priority nice">Nice to Have</div>
+    </div>
+    <div class="gives">
+      <b>What it unlocks:</b> 3 photos per venue + review snippets + rating. Less coverage than Foursquare in Europe but adds variety where it overlaps.
+    </div>
+    <div class="cost">
+      <b>FREE 5,000 calls/day</b>. No credit card required.
+    </div>
+    <ol class="steps">
+      <li>Sign up at <b>yelp.com/developers</b></li>
+      <li>Create App → fill the form (name + email is enough)</li>
+      <li>Copy your API Key</li>
+    </ol>
+    <a class="signup-btn" href="https://www.yelp.com/developers/v3/manage_app" target="_blank">→ Sign up at Yelp Developers</a>
+    <input type="password" class="key-input" id="key-yelp" placeholder="Paste Yelp API key here">
+    <button class="save-btn" onclick="saveKey('yelp', 'YELP_KEY')">Save Key</button>
+    <button class="clear-btn" onclick="clearKey('yelp', 'YELP_KEY')">Clear</button>
+  </div>
+
+  <!-- ========== 5. TRIPADVISOR ========== -->
+  <div class="api" id="api-tripadvisor">
+    <div class="row1">
+      <div class="num">5</div>
+      <div class="name">TripAdvisor Content API <span class="badge" id="tripadvisor-status">not set</span></div>
+      <div class="priority nice">Nice to Have</div>
+    </div>
+    <div class="gives">
+      <b>What it unlocks:</b> Tourist reviews + photos for each venue. Useful overlap with Yelp/Foursquare. Strongest for European venues.
+    </div>
+    <div class="cost">
+      <b>FREE 5,000 calls/month</b> for non-commercial use. Apply for access (~1–3 days approval).
+    </div>
+    <ol class="steps">
+      <li>Apply at <b>tripadvisor.com/developers</b></li>
+      <li>Wait for approval email (1–3 business days)</li>
+      <li>Generate API key in the developer portal</li>
+    </ol>
+    <a class="signup-btn" href="https://www.tripadvisor.com/developers" target="_blank">→ Apply at TripAdvisor</a>
+    <input type="password" class="key-input" id="key-tripadvisor" placeholder="Paste TripAdvisor API key here">
+    <button class="save-btn" onclick="saveKey('tripadvisor', 'TRIPADVISOR_KEY')">Save Key</button>
+    <button class="clear-btn" onclick="clearKey('tripadvisor', 'TRIPADVISOR_KEY')">Clear</button>
+  </div>
+
+  <!-- ========== TOTAL COST ========== -->
+  <div class="totals">
+    <h2>💰 Your Realistic Monthly Cost</h2>
+    <div class="total">$0–25/month</div>
+    <p>Google Maps stays free under the $200 credit. Yelp + Foursquare + TripAdvisor are all free for personal use. <b>BestTime ($5–25)</b> is the only thing you'll actually pay for, and that's the live-busy magic.</p>
+    <p style="margin-top:10px"><b>If this becomes a real product with users:</b> add ~$200–500/mo for elevated tiers across the board.</p>
+  </div>
+
+  <a class="open-app" href="index.html">→ Open Scout App</a>
+
+  <div class="footnote">
+    <b>Privacy note:</b> All API keys live in your browser's localStorage only. They never get sent to any server other than the API providers themselves (Google, Foursquare, etc.) when the app makes calls.<br><br>
+    <b>Instagram / Facebook:</b> Meta requires Business Verification + App Review for location data. That's a 2–6 week approval process. Worth doing only if this becomes a real product.
+  </div>
+
+</div>
+
+<script>
+const KEYS = {
+  'google': 'GOOGLE_MAPS_KEY',
+  'besttime': 'BESTTIME_KEY',
+  'fsq': 'FSQ_KEY',
+  'yelp': 'YELP_KEY',
+  'tripadvisor': 'TRIPADVISOR_KEY',
+};
+
+function loadAll() {
+  for (const [id, storageKey] of Object.entries(KEYS)) {
+    const v = localStorage.getItem(storageKey);
+    const input = document.getElementById('key-' + id);
+    const status = document.getElementById(id + '-status');
+    const card = document.getElementById('api-' + id);
+    if (v) {
+      input.value = v;
+      input.classList.add('set');
+      status.textContent = '✓ set';
+      status.classList.add('set');
+      card.classList.add('active');
+    }
+  }
+}
+
+function saveKey(id, storageKey) {
+  const input = document.getElementById('key-' + id);
+  const val = input.value.trim();
+  if (!val) { alert('Please paste a key first.'); return; }
+  localStorage.setItem(storageKey, val);
+  loadAll();
+  const btn = event.target;
+  btn.textContent = '✓ Saved';
+  btn.classList.add('saved');
+  setTimeout(() => { btn.textContent = 'Save Key'; btn.classList.remove('saved'); }, 1500);
+}
+
+function clearKey(id, storageKey) {
+  if (!confirm('Clear this key?')) return;
+  localStorage.removeItem(storageKey);
+  document.getElementById('key-' + id).value = '';
+  document.getElementById('key-' + id).classList.remove('set');
+  const status = document.getElementById(id + '-status');
+  status.textContent = 'not set';
+  status.classList.remove('set');
+  document.getElementById('api-' + id).classList.remove('active');
+}
+
+loadAll();
+</script>
+</body>
+</html>
