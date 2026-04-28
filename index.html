@@ -681,7 +681,6 @@ const KEYS = {
   fsq: localStorage.getItem('FSQ_KEY'),
   yelp: localStorage.getItem('YELP_KEY'),
   tripadvisor: localStorage.getItem('TRIPADVISOR_KEY'),
-  cseCx: null,
 };
 // Show upgrade banner if no Google key
 if (!KEYS.google) {
@@ -1102,69 +1101,6 @@ async function initCesium3D() {
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
   renderVenueList();
-}
-
-// =====================================================================
-// Google Custom Search Image API — recent images of the bar from across
-// the web (Instagram, TripAdvisor, news, blogs) filtered by date.
-// =====================================================================
-// Holds the most recent CSE error/status so we can show it on the page itself.
-window._cseLastStatus = '';
-async function fetchRecentImages(v, dateRestrict) {
-  if (!KEYS.google || !KEYS.cseCx) {
-    window._cseLastStatus = !KEYS.google ? 'No Google key set' : 'No CSE engine ID set';
-    return [];
-  }
-  const q = `${v.name} Prague`;
-  const baseParams = new URLSearchParams({
-    key: KEYS.google,
-    cx:  KEYS.cseCx,
-    q,
-    searchType: 'image',
-    num: '10',
-    safe: 'off',
-  });
-  if (dateRestrict) baseParams.set('dateRestrict', dateRestrict);
-
-  // Try the standard Custom Search endpoint first. If the project rejects
-  // (site-restricted engines need the /siterestrict variant), retry there.
-  const endpoints = [
-    'https://www.googleapis.com/customsearch/v1',
-    'https://www.googleapis.com/customsearch/v1/siterestrict',
-  ];
-  let lastErr = '';
-  for (const ep of endpoints) {
-    try {
-      const r = await fetch(`${ep}?${baseParams.toString()}`);
-      if (!r.ok) {
-        const txt = await r.text();
-        let msg = `HTTP ${r.status}`;
-        try {
-          const j = JSON.parse(txt);
-          if (j.error && j.error.message) msg += ' — ' + j.error.message;
-        } catch (_) { msg += ' — ' + txt.slice(0, 200); }
-        lastErr = msg;
-        // 403 might mean wrong endpoint for engine type → fall through to next
-        if (r.status === 403) continue;
-        window._cseLastStatus = msg;
-        return [];
-      }
-      const data = await r.json();
-      window._cseLastStatus = `OK (${ep.endsWith('/siterestrict') ? 'siterestrict' : 'standard'}) — ${(data.items || []).length} results`;
-      if (!data.items) return [];
-      return data.items.map(i => ({
-        thumb:  i.image && i.image.thumbnailLink ? i.image.thumbnailLink : i.link,
-        full:   i.link,
-        source: i.displayLink || '',
-        title:  i.title || '',
-        context: i.image && i.image.contextLink ? i.image.contextLink : i.link,
-      }));
-    } catch (e) {
-      lastErr = 'Network error: ' + (e && e.message);
-    }
-  }
-  window._cseLastStatus = lastErr || 'Both endpoints failed';
-  return [];
 }
 
 // =====================================================================
@@ -1744,14 +1680,7 @@ async function openDetail(id) {
   document.getElementById('detailBody').dataset.venueId = v.id;
   document.getElementById('detailBody').innerHTML = `
     <div class="ddesc">${v.desc}</div>
-    ${KEYS.cseCx ? `
-    <div class="feed-label">📡 Recent <span class="freshness">past week</span></div>
-    <div class="feed" id="recentFeed">
-      <div class="feed-loading"></div><div class="feed-loading"></div>
-      <div class="feed-loading"></div><div class="feed-loading"></div>
-      <div class="feed-loading"></div>
-    </div>` : ''}
-    <div class="feed-label">⭐ Curated</div>
+    <div class="feed-label">📷 Photos</div>
     <div class="feed" id="feedFeed">
       ${img ? `<img src="${img}" onclick="window.open('${img}','_blank')">` : ''}
       <div class="feed-loading"></div><div class="feed-loading"></div>
@@ -1858,45 +1787,6 @@ async function openDetail(id) {
   dEl.querySelector('.grabber').onclick = () => dEl.classList.contains('peek') ? expandPanel() : collapsePanel();
   dEl.querySelector('.header').onclick = () => dEl.classList.contains('peek') ? expandPanel() : null;
   dEl.querySelector('.expand-bar').onclick = expandPanel;
-  // Recent images via Google Custom Search Image API.
-  // Progressively widen: past week → past month → past year → any time.
-  if (KEYS.cseCx && KEYS.google) {
-    (async () => {
-      const ranges = [
-        { code: 'w1', label: 'past week' },
-        { code: 'm1', label: 'past month' },
-        { code: 'y1', label: 'past year' },
-        { code: null, label: 'any time' },
-      ];
-      let imgs = [];
-      let usedRange = ranges[0];
-      for (const r of ranges) {
-        imgs = await fetchRecentImages(v, r.code);
-        if (imgs.length) { usedRange = r; break; }
-      }
-      const feed = document.getElementById('recentFeed');
-      const body = document.getElementById('detailBody');
-      if (!feed || !body || body.dataset.venueId !== v.id) return;
-      // Update the freshness badge to reflect what we actually found
-      const badge = body.parentNode.querySelector('.feed-label .freshness');
-      if (badge) badge.textContent = usedRange.label;
-      if (!imgs.length) {
-        const diag = (window._cseLastStatus || 'unknown').replace(/</g,'&lt;');
-        feed.innerHTML = `<div style="grid-column:1/-1;font-size:11px;opacity:0.85;padding:14px;background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.3);border-radius:8px;line-height:1.5">
-          <b style="color:#FFB85C">No web photos found.</b><br>
-          <span style="opacity:0.85;display:block;margin-top:6px;font-family:ui-monospace,monospace;font-size:10px;word-break:break-word">${diag}</span>
-        </div>`;
-        return;
-      }
-      feed.innerHTML = imgs.slice(0, 10).map(i => `
-        <div class="feed-tile">
-          <img src="${i.thumb}" loading="lazy" onclick="window.open('${i.context.replace(/'/g,'')}','_blank')" alt="${(i.title||'').replace(/"/g,'&quot;')}">
-          <div class="feed-source">${i.source.replace(/^www\./,'').replace(/</g,'&lt;')}</div>
-        </div>
-      `).join('');
-    })();
-  }
-
   // Photos: prefer Google Places (curated) → Foursquare → fallback. Grid uses
   // smaller thumbs; click opens the full-resolution version.
   if (v.googlePhotos && v.googlePhotos.length) {
